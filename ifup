@@ -1,0 +1,6 @@
+#!/bin/sh
+
+nic=$1
+
+ip link set up $nic
+brctl addif br-ryudev $nic

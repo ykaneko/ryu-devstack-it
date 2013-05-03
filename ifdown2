@@ -1,0 +1,6 @@
+#!/bin/sh
+
+nic=$1
+
+brctl delif br-ryudev-local $nic
+ip link set down $nic
