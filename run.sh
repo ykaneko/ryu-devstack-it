@@ -444,17 +444,21 @@ function terminate_all_instances() {
     cat <<EOF | $SSHCMD $RYUDEV1_IP
 set -x
 cd devstack
-. ./openrc demo demo
-nova list|while read line; do
-    ID=\$(echo \$line|awk '{print \$2}')
-    test -n "\$ID" && nova delete \$ID
-done
-for (( i=0; i<6; i++ )); do
-    LN=\$(nova list|wc -l)
-    if [ \$LN -le 1 ]; then
-        break
-    fi
-    sleep 10
+. ./openrc admin admin
+tenants=\$(keystone tenant-list|awk '\$6=="True"{print \$4}')
+for tenant in \$tenants; do
+    . ./openrc admin $tenant
+    nova list|while read line; do
+        ID=\$(echo \$line|awk '{print \$2}')
+        test -n "\$ID" && nova delete \$ID
+    done
+    for (( i=0; i<6; i++ )); do
+        LN=\$(nova list|wc -l)
+        if [ \$LN -le 4 ]; then
+            break
+        fi
+        sleep 10
+    done
 done
 EOF
 }
