@@ -311,8 +311,24 @@ function start_devstack() {
     TITLE="start devstack: $vmname/$ipaddr"
     title "++"
     $SSHCMD $ipaddr rm -rf logs
-    $SSHCMD $ipaddr VERBOSE=True devstack/stack.sh
-    result "" $? "++"
+    $SSHCMD $ipaddr VERBOSE=True devstack/stack.sh &
+    pid=$!
+    fail=1
+    for (( i=0; i<120; i++ )); do
+        kill -0 $pid 2>/dev/null
+        if [ $? -ne 0 ]; then
+            fail=0
+            break
+        fi
+        sleep 60
+    done
+    msg=""
+    if [ $fail -ne 0 ]; then
+        kill $pid
+        msg="timeout"
+    fi
+    wait $pid
+    result "$msg" $? "++"
 }
 
 function stop_devstack() {
