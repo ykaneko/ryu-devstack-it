@@ -308,6 +308,8 @@ function start_devstack() {
     $SCPCMD -r devstack/$DEVSTACK/devstack ubuntu@$ipaddr:
     result "" $? "++"
     
+    $SSHCMD $ipaddr rm -rf /opt/stack/glance/bin
+    
     TITLE="start devstack: $vmname/$ipaddr"
     title "++"
     $SSHCMD $ipaddr rm -rf logs
