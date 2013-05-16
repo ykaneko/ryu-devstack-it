@@ -196,6 +196,11 @@ Jenkinsの設定はWeb画面で行います。
         set -e
         ./update-devstack.sh grizzly-gre
         ./run.sh grizzly-gre
+
+       ※ run.shは環境変数EXTIF(デフォルトeth0)を参照します。
+         インターネットへの経路に使用するインターフェースの名前が
+         eth0以外のときは明示的に指定してください。
+            例. EXTIF=em1 ./run.sh grizzly-gre
   
     ビルド後の処理  (必要に応じて設定します)
       Email通知
