@@ -228,7 +228,7 @@ Jenkinsの設定はWeb画面で行います。
       [URLTrigger] - Poll with a URL
         URL: https://github.com/osrg/ryu/commits/master.atom
         URL: https://github.com/openstack/quantum/commits/stable/folsom.atom
-        URL: https://github.com/openstack/nova/commits/stable/fomsol.atom
+        URL: https://github.com/openstack/nova/commits/stable/folsom.atom
 
     ビルド
       シェルスクリプト:
