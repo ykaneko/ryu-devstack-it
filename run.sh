@@ -20,7 +20,7 @@ SUDO="sudo -S"
 
 RYUDEV_BASE="files/ryudev.qcow2"
 
-RYUDEV1_IMG="ryu1.qcow2"
+RYUDEV1_IMG="ryu1.${TESTNAME}.qcow2"
 RYUDEV1_PID="$TMP/kvm_ryudev1.pid"
 RYUDEV1_PORT="4444"
 RYUDEV1_MAC1="f0:00:00:00:00:01"
@@ -29,7 +29,7 @@ RYUDEV1_HOSTNAME="ryudev1"
 RYUDEV1_MAC2="f0:00:00:00:00:11"
 RYUDEV1_VNC=":1"
 
-RYUDEV2_IMG="ryu2.qcow2"
+RYUDEV2_IMG="ryu2.${TESTNAME}.qcow2"
 RYUDEV2_PID="$TMP/kvm_ryudev2.pid"
 RYUDEV2_PORT="4445"
 RYUDEV2_MAC1="f0:00:00:00:00:02"
@@ -38,7 +38,7 @@ RYUDEV2_HOSTNAME="ryudev2"
 RYUDEV2_MAC2="f0:00:00:00:00:12"
 RYUDEV2_VNC=":2"
 
-RYUDEV3_IMG="ryu3.qcow2"
+RYUDEV3_IMG="ryu3.${TESTNAME}.qcow2"
 RYUDEV3_PID="$TMP/kvm_ryudev3.pid"
 RYUDEV3_PORT="4446"
 RYUDEV3_MAC1="f0:00:00:00:00:03"
@@ -595,7 +595,8 @@ done
 test \$fail -ne 0 && exit 1
 fail=1
 for (( i=0; i<36; i++ )); do
-    nova console-log \$ID|egrep 'cirros login:'
+    CONSOLE_LOG="\$(nova console-log \$ID)"
+    echo "\${CONSOLE_LOG}"|egrep 'cirros login:'
     if [ \$? -eq 0 ]; then
         fail=0
         break
@@ -603,7 +604,8 @@ for (( i=0; i<36; i++ )); do
     sleep 10
 done
 test \$fail -ne 0 && exit 1
-nova console-log \$ID|egrep 'Lease of .* obtained,'
+CONSOLE_LOG="\$(nova console-log \$ID)"
+echo "\${CONSOLE_LOG}"|egrep 'Lease of .* obtained,'
 test \$? -ne 0 && exit 1
 IP=\$(nova list|grep $name|awk '{print \$$NOVA_LIST_IP_COL}'|sed 's/.*=\\([0-9.]*\\).*/\\1/')
 echo -n \$IP > ~/fixedip-$name
