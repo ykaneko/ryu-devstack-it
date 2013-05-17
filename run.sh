@@ -573,7 +573,8 @@ done
 test \$fail -ne 0 && exit 1
 fail=1
 for (( i=0; i<36; i++ )); do
-    nova console-log \$ID|egrep 'cirros login:'
+    CONSOLE_LOG="\$(nova console-log \$ID)"
+    echo "\${CONSOLE_LOG}"|egrep 'cirros login:'
     if [ \$? -eq 0 ]; then
         fail=0
         break
@@ -581,7 +582,8 @@ for (( i=0; i<36; i++ )); do
     sleep 10
 done
 test \$fail -ne 0 && exit 1
-nova console-log \$ID|egrep 'Lease of .* obtained,'
+CONSOLE_LOG="\$(nova console-log \$ID)"
+echo "\${CONSOLE_LOG}"|egrep 'Lease of .* obtained,'
 test \$? -ne 0 && exit 1
 IP=\$(nova list|grep $name|awk '{print \$$NOVA_LIST_IP_COL}'|sed 's/.*=\\([0-9.]*\\).*/\\1/')
 echo -n \$IP > ~/fixedip-$name
