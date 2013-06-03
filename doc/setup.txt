@@ -66,9 +66,13 @@ Jenkins / Tomcat / Ubuntu 12.04 Server amd64
   |   |-- folsom
   |   |   `-- devstack    ... folsom用(stable/folsom)devstack
   |   |-- grizzly-gre
-  |   |   `-- devstack    ... grizzly用(master)devstack
-  |   `-- grizzly-vlan
-  |       `-- devstack    ... grizzly用(master)devstack
+  |   |   `-- devstack    ... grizzly用(stable/grizzly)devstack
+  |   |-- grizzly-vlan
+  |   |   `-- devstack    ... grizzly用(stable/grizzly)devstack
+  |   |-- master-gre
+  |   |   `-- devstack    ... master用devstack
+  |   `-- master-vlan
+  |       `-- devstack    ... master用devstack
   |-- logs
   |   |-- devstack.folsom
   |   |   |-- ryudev1                         ... ryudev1のログ
@@ -86,10 +90,14 @@ Jenkins / Tomcat / Ubuntu 12.04 Server amd64
   |   |   `-- ryudev3
   |   |-- devstack.grizzly-gre                ... devstack.folsomと同様
             <略>
+  |   |-- devstack.master-gre                 ... devstack.folsomと同様
+            <略>
   |   |-- log.folsom.20121217174718           ... テストスクリプトのログ
   |   |-- log.grizzly-gre.20121217180154
+  |   |-- log.master-gre.20130603171036
   |   |-- summary.folsom.20121217174718       ... テストスクリプトのサマリ
-  |   `-- summary.grizzly-gre.20121220203026      (標準出力の内容)
+  |   |-- summary.grizzly-gre.20121220203026      (標準出力の内容)
+  |   `-- summary.master-gre.20130603171036
   |-- ryu1.qcow2                              ... ryudev1のディスクイメージ
   |-- ryu2.qcow2                              ... ryudev2のディスクイメージ
   |-- ryu3.qcow2                              ... ryudev3のディスクイメージ
@@ -157,7 +165,7 @@ Jenkinsの設定はWeb画面で行います。
 - ジョブの設定
 
   新規ジョブ作成 [img/06.png]
-    ジョブ名: grizzly-gre
+    ジョブ名: master-gre
     フリースタイル・プロジェクトのビルド
 
     [img/07.png]
@@ -194,13 +202,13 @@ Jenkinsの設定はWeb画面で行います。
       シェルスクリプト:
         #!/bin/bash
         set -e
-        ./update-devstack.sh grizzly-gre
-        ./run.sh grizzly-gre
+        ./update-devstack.sh master-gre
+        ./run.sh master-gre
 
        ※ run.shは環境変数EXTIF(デフォルトeth0)を参照します。
          インターネットへの経路に使用するインターフェースの名前が
          eth0以外のときは明示的に指定してください。
-            例. EXTIF=em1 ./run.sh grizzly-gre
+            例. EXTIF=em1 ./run.sh master-gre
   
     ビルド後の処理  (必要に応じて設定します)
       Email通知
@@ -210,10 +218,40 @@ Jenkinsの設定はWeb画面で行います。
     画面下の"保存"をクリックしてジョブを登録します。
     ジョブを作ったら、手動で実行(ビルド実行)します。 [img/08.png][img/09.png]
 
-  grizzly-vlanおよびfolsomも同様にして作ります。
+  master-vlanおよびgrizzly-gre、grizzly-vlanも同様にして作ります。
   ビルド・トリガのURLとビルドのシェルスクリプトが若干違うだけです。
 
+  - master-vlan
+
+    ビルド
+      シェルスクリプト:
+        #!/bin/bash
+        set -e
+        ./update-devstack.sh master-vlan
+        ./run.sh master-vlan
+
+  - grizzly-gre
+
+    ビルド・トリガ
+      [URLTrigger] - Poll with a URL
+        URL: https://github.com/osrg/ryu/commits/master.atom
+        URL: https://github.com/openstack/quantum/commits/stable/grizzly.atom
+        URL: https://github.com/openstack/nova/commits/stable/grizzly.atom
+
+    ビルド
+      シェルスクリプト:
+        #!/bin/bash
+        set -e
+        ./update-devstack.sh grizzly-gre
+        ./run.sh grizzly-gre
+
   - grizzly-vlan
+
+    ビルド・トリガ
+      [URLTrigger] - Poll with a URL
+        URL: https://github.com/osrg/ryu/commits/master.atom
+        URL: https://github.com/openstack/quantum/commits/stable/grizzly.atom
+        URL: https://github.com/openstack/nova/commits/stable/grizzly.atom
 
     ビルド
       シェルスクリプト:
@@ -221,18 +259,4 @@ Jenkinsの設定はWeb画面で行います。
         set -e
         ./update-devstack.sh grizzly-vlan
         ./run.sh grizzly-vlan
-
-  - folsom
-
-    ビルド・トリガ
-      [URLTrigger] - Poll with a URL
-        URL: https://github.com/osrg/ryu/commits/master.atom
-        URL: https://github.com/openstack/quantum/commits/stable/folsom.atom
-        URL: https://github.com/openstack/nova/commits/stable/folsom.atom
-
-    ビルド
-      シェルスクリプト:
-        #!/bin/bash
-        set -e
-        ./run.sh folsom
 

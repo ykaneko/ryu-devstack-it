@@ -14,7 +14,7 @@ function update() {
 set -e
 
 REL=$1
-VERSIONS="folsom|grizzly-gre|grizzly-vlan"
+VERSIONS="folsom|grizzly-gre|grizzly-vlan|master-gre|master-vlan"
 if [[ ! "$REL" =~ ($VERSIONS) ]]; then
     echo "unsupported version: $REL"
     echo "$0 $VERSIONS"
@@ -37,6 +37,9 @@ folsom)
     update "stable/folsom"
     ;;
 grizzly-gre|grizzly-vlan)
+    update "stable/grizzly"
+    ;;
+master-gre|master-vlan)
     update "master"
     ;;
 esac
