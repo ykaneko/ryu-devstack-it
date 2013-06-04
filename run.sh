@@ -355,8 +355,8 @@ sudo ovs-vsctl del-br br-int
 sudo ovs-vsctl del-br br-ex
 ip netns|while read ns; do sudo ip netns delete \$ns; done
 sudo ovs-vsctl show|sed 's/^  *//'|egrep '^(Bridge|Port)'|tr -d '"'|while read ln; do key=\$(echo \$ln|awk '{print \$1}'); val=\$(echo \$ln|awk '{print \$2}'); if [ "\$key" = "Bridge" ]; then br=\$val; elif [ "\$key" = "Port" -a "\$val" != "\$br" ]; then sudo ovs-vsctl del-port \$br \$val; fi; done
-sudo rm -rf /opt/stack/data/quantum/external/pids/*
-sudo rm -rf /opt/stack/data/quantum/dhcp/*
+cd /opt/stack/data/quantum/external/pids/ && ls -1|xargs -n 10 -r -t sudo rm -rf
+cd /opt/stack/data/quantum/dhcp/ && ls -1|xargs -n 10 -r -t sudo rm -rf
 EOF
 }
 
