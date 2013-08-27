@@ -207,8 +207,6 @@ latex_documents = [
 # If false, no module index is generated.
 #latex_domain_indices = True
 
-latex_kanji = 'utf8'
-
 # -- Options for manual page output --------------------------------------------
 
 # One entry per manual page. List of tuples
@@ -241,6 +239,7 @@ texinfo_documents = [
 
 # How to display URL addresses: 'footnote', 'no', or 'inline'.
 #texinfo_show_urls = 'footnote'
+
 
 # -- Options for PDF output --------------------------------------------------
 
