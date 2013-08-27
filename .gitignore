@@ -3,3 +3,4 @@ logs/
 tmp/
 files/ryudev.qcow2
 ryu*.qcow2
+build/
