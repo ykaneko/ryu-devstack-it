@@ -1,10 +1,10 @@
 .. Ryu Integrated Test documentation master file, created by
-   sphinx-quickstart on Tue Aug 27 12:42:16 2013.
+   sphinx-quickstart on Mon Sep  9 13:41:35 2013.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
 Welcome to Ryu Integrated Test's documentation!
-================================================
+===============================================
 
 Contents:
 
@@ -12,7 +12,6 @@ Contents:
    :maxdepth: 2
 
    setup.rst
-
 
 Indices and tables
 ==================
