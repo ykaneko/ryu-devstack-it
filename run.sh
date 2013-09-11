@@ -18,6 +18,16 @@ LOGFILE=$LOG/log.$TESTNAME.$LOGDATE
 STACKLOG=$LOG/devstack.$TESTNAME
 SUDO="sudo -S"
 
+case $TESTNAME in
+master-gre|master-vlan)
+  QUANTUM="neutron"
+  ;;
+*)
+  QUANTUM="quantum"
+  ;;
+esac
+METAPROXY="$QUANTUM-ns-metadata-proxy"
+
 RYUDEV_BASE="files/ryudev.qcow2"
 
 RYUDEV1_IMG="ryu1.${TESTNAME}.qcow2"
@@ -206,6 +216,36 @@ function terminate_vm() {
     fi
 }
 
+function install_pkgs() {
+    ipaddr=$1
+    vmname=$2
+
+    TITLE="install packages: $vmname"
+    title "++"
+    cat <<EOF | $SSHCMD $ipaddr
+set -x
+
+sudo apt-get update > /dev/null
+sudo apt-get install -y python-dev
+
+which pip
+if [ \$? -ne 0 ]; then
+  sudo apt-get install -y python-pip
+fi
+
+ver=\$(pip show oslo.config|awk '\$1=="Version:"{print \$2}')
+ver=\${ver%%\.[0-9][^0-9.]*}
+if [ \$ver \\< "1.2" ]; then
+  sudo pip uninstall oslo.config
+  ver=""
+fi
+if [ -z "$ver" ]; then
+  sudo pip install http://tarballs.openstack.org/oslo.config/oslo.config-1.2.0a4.tar.gz
+fi
+EOF
+    result "" $? "++"
+}
+
 function export_instance_dir() {
     ipaddr=$1
     vmname=$2
@@ -214,10 +254,10 @@ function export_instance_dir() {
     title "++"
     cat <<EOF | $SSHCMD $ipaddr
 set -x
+
 nfs=\$(dpkg -l nfs-kernel-server|grep nfs-kernel-server|awk '{print \$1}')
 libvirt=\$(dpkg -l libvirt-bin|grep libvirt-bin|awk '{print \$1}')
 if [ "\$nfs" != "ii" -o "\$libvirt" != "ii" ]; then
-  sudo apt-get update > /dev/null
   if [ "\$nfs" != "ii" ]; then
     sudo apt-get install -y nfs-kernel-server > /dev/null || exit 1
   fi
@@ -247,10 +287,10 @@ function mount_instance_dir() {
     title "++"
     cat <<EOF | $SSHCMD $ipaddr
 set -x
+
 nfs=\$(dpkg -l nfs-common|grep nfs-common|awk '{print \$1}')
 libvirt=\$(dpkg -l libvirt-bin|grep libvirt-bin|awk '{print \$1}')
 if [ "\$nfs" != "ii" -o "\$libvirt" != "ii" ]; then
-  sudo apt-get update > /dev/null
   if [ "\$nfs" != "ii" ]; then
     sudo apt-get install -y nfs-common > /dev/null || exit 1
   fi
@@ -309,6 +349,7 @@ function start_devstack() {
     result "" $? "++"
     
     $SSHCMD $ipaddr rm -rf /opt/stack/glance/bin
+    $SSHCMD $ipaddr sudo ip link set up eth1
     
     TITLE="start devstack: $vmname/$ipaddr"
     title "++"
@@ -348,15 +389,15 @@ function stop_devstack() {
 set -x
 test -e /etc/logrotate.d/mysql-server && sudo logrotate /etc/logrotate.d/mysql-server
 sudo killall dnsmasq
-sudo killall quantum-ns-metadata-proxy
+sudo killall $METAPROXY
 ip link|awk '\$2 ~ /tap|qvo|qbr/{sub(/:/,"",\$2);print \$2}'|xargs --verbose -r -l1 sudo ip link set down
 ip link|awk '\$2 ~ /tap|qvo|qbr/{sub(/:/,"",\$2);print \$2}'|xargs --verbose -r -l1 sudo ip link delete
 sudo ovs-vsctl del-br br-int
 sudo ovs-vsctl del-br br-ex
 ip netns|while read ns; do sudo ip netns delete \$ns; done
 sudo ovs-vsctl show|sed 's/^  *//'|egrep '^(Bridge|Port)'|tr -d '"'|while read ln; do key=\$(echo \$ln|awk '{print \$1}'); val=\$(echo \$ln|awk '{print \$2}'); if [ "\$key" = "Bridge" ]; then br=\$val; elif [ "\$key" = "Port" -a "\$val" != "\$br" ]; then sudo ovs-vsctl del-port \$br \$val; fi; done
-cd /opt/stack/data/quantum/external/pids/ && ls -1|xargs -n 10 -r -t sudo rm -rf
-cd /opt/stack/data/quantum/dhcp/ && ls -1|xargs -n 10 -r -t sudo rm -rf
+cd /opt/stack/data/$QUANTUM/external/pids/ && ls -1|xargs -n 10 -r -t sudo rm -rf
+cd /opt/stack/data/$QUANTUM/dhcp/ && ls -1|xargs -n 10 -r -t sudo rm -rf
 EOF
 }
 
@@ -369,8 +410,8 @@ function sg_add_icmp() {
     else
         cat <<EOF
 tenant_id=\$(keystone tenant-list|awk '\$4=="$tenant"{print \$2}')
-sg_id=\$(quantum security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
-quantum security-group-rule-create --protocol icmp \$sg_id
+sg_id=\$($QUANTUM security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
+$QUANTUM security-group-rule-create --protocol icmp \$sg_id
 EOF
     fi
 }
@@ -383,9 +424,9 @@ function sg_del_icmp() {
     else
         cat <<EOF
 tenant_id=\$(keystone tenant-list|awk '\$4=="$tenant"{print \$2}')
-sg_id=\$(quantum security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
-rule_id=\$(quantum security-group-rule-list -c id -c protocol -c security_group|awk '(\$6=="$sgname" && \$4=="icmp"){print \$2}')
-quantum security-group-rule-delete \$rule_id
+sg_id=\$($QUANTUM security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
+rule_id=\$($QUANTUM security-group-rule-list -c id -c protocol -c security_group|awk '(\$6=="$sgname" && \$4=="icmp"){print \$2}')
+$QUANTUM security-group-rule-delete \$rule_id
 EOF
     fi
 }
@@ -398,8 +439,8 @@ function sg_add_ssh() {
     else
         cat <<EOF
 tenant_id=\$(keystone tenant-list|awk '\$4=="$tenant"{print \$2}')
-sg_id=\$(quantum security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
-quantum security-group-rule-create --protocol tcp --port-range-min 22 --port-range-max 22 \$sg_id
+sg_id=\$($QUANTUM security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
+$QUANTUM security-group-rule-create --protocol tcp --port-range-min 22 --port-range-max 22 \$sg_id
 EOF
     fi
 }
@@ -412,9 +453,9 @@ function sg_del_ssh() {
     else
         cat <<EOF
 tenant_id=\$(keystone tenant-list|awk '\$4=="$tenant"{print \$2}')
-sg_id=\$(quantum security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
-rule_id=\$(quantum security-group-rule-list -c id -c protocol -c security_group|awk '(\$6=="$sgname" && \$4=="tcp"){print \$2}')
-quantum security-group-rule-delete \$rule_id
+sg_id=\$($QUANTUM security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
+rule_id=\$($QUANTUM security-group-rule-list -c id -c protocol -c security_group|awk '(\$6=="$sgname" && \$4=="tcp"){print \$2}')
+$QUANTUM security-group-rule-delete \$rule_id
 EOF
     fi
 }
@@ -434,7 +475,7 @@ $(sg_add_ssh default $tenant)
 tenant_id=\$(keystone tenant-list|awk '\$4=="$tenant"{print \$2}')
 fail=1
 for (( i=0; i<30; i++ )); do
-    quantum port-list -c tenant_id -c device_owner|grep \$tenant_id|grep 'network:dhcp'
+    $QUANTUM port-list -c tenant_id -c device_owner|grep \$tenant_id|grep 'network:dhcp'
     if [ \$? -eq 0 ]; then
          fail=0
          break
@@ -523,6 +564,10 @@ run_vm $RYUDEV1_IMG $RYUDEV1_PID $RYUDEV1_PORT $RYUDEV1_MAC1 $RYUDEV1_IP $RYUDEV
 run_vm $RYUDEV2_IMG $RYUDEV2_PID $RYUDEV2_PORT $RYUDEV2_MAC1 $RYUDEV2_IP $RYUDEV2_MAC2 $RYUDEV2_VNC
 run_vm $RYUDEV3_IMG $RYUDEV3_PID $RYUDEV3_PORT $RYUDEV3_MAC1 $RYUDEV3_IP $RYUDEV3_MAC2 $RYUDEV3_VNC
 
+install_pkgs $RYUDEV1_IP ryudev1
+install_pkgs $RYUDEV2_IP ryudev2
+install_pkgs $RYUDEV3_IP ryudev3
+
 export_instance_dir $RYUDEV1_IP ryudev1
 mount_instance_dir $RYUDEV2_IP ryudev2 $RYUDEV1_IP
 mount_instance_dir $RYUDEV3_IP ryudev3 $RYUDEV1_IP
@@ -581,10 +626,10 @@ set -x
 cd devstack
 . ./openrc $user $tenant
 IMG=\$(nova image-list|grep ' $img '|awk '{print \$2}')
-NET=\$(quantum net-list|grep ' $net '|awk '{print \$2}')
+NET=\$($QUANTUM net-list|grep ' $net '|awk '{print \$2}')
 ID=\$(nova boot --flavor 1 --image \$IMG --nic net-id=\$NET --key-name $keyname --availability-zone $zone $name|grep ' id '|awk '{print \$4}')
 fail=1
-for (( i=0; i<6; i++ )); do
+for (( i=0; i<30; i++ )); do
     ST=\$(nova list|grep \$ID|awk '{print \$6}')
     if [ "\$ST" = "ACTIVE" ]; then
         fail=0
@@ -635,17 +680,17 @@ function test_float() {
 set -x
 cd devstack
 . ./openrc $user $tenant
-NETID=\$(quantum net-list|grep ' $PUBLIC_NET '|awk '{print \$2}')
+NETID=\$($QUANTUM net-list|grep ' $PUBLIC_NET '|awk '{print \$2}')
 test -z "\$NETID" && exit 1
-SUBNETID=\$(quantum net-list|grep $netname|awk '{print \$6}')
+SUBNETID=\$($QUANTUM net-list|grep $netname|awk '{print \$6}')
 test -z "\$SUBNETID" && exit 1
-PORTID=\$(quantum port-list|grep $ip|grep \$SUBNETID|awk '{print \$2}')
+PORTID=\$($QUANTUM port-list|grep $ip|grep \$SUBNETID|awk '{print \$2}')
 test -z "\$PORTID" && exit 1
-FLOATID=\$(quantum floatingip-create \$NETID|grep ' id '|awk '{print \$4}')
+FLOATID=\$($QUANTUM floatingip-create \$NETID|grep ' id '|awk '{print \$4}')
 test -z "\$FLOATID" && exit 1
-quantum floatingip-associate \$FLOATID \$PORTID
+$QUANTUM floatingip-associate \$FLOATID \$PORTID
 test \$? -ne 0 && exit 1
-FIP=\$(quantum floatingip-list|grep \$FLOATID|awk '{print \$6}')
+FIP=\$($QUANTUM floatingip-list|grep \$FLOATID|awk '{print \$6}')
 test -z "\$FIP" && exit 1
 echo -n \$FIP > ~/floatingip-$name
 exit 0
@@ -800,26 +845,26 @@ TENANTID=\$(keystone tenant-create --name $tenant|grep ' id '|awk '{print \$4}')
 test -z "\$TENANTID" && exit 1
 USERID=\$(keystone user-list|grep ' admin '|awk '{print \$2}')
 test -z "\$USERID" && exit 1
-ROLEID=\$(keystone user-role-list|grep ' admin '|awk '{print \$2}')
+ROLEID=\$(keystone role-list|grep ' admin '|awk '{print \$2}')
 test -z "\$ROLEID" && exit 1
 keystone user-role-add --user-id \$USERID --role-id \$ROLEID --tenant-id \$TENANTID
 test \$? -ne 0 && exit 1
 . ./openrc admin $tenant
-NETID=\$(quantum net-create $net|grep ' id '|awk '{print \$4}')
+NETID=\$($QUANTUM net-create --tenant_id \$TENANTID $net|grep ' id '|awk '{print \$4}')
 test -z "\$NETID" && exit 1
-SUBNETID=\$(quantum subnet-create --ip-version 4 --gateway $gateway \$NETID $cidr|grep ' id '|awk '{print \$4}')
+SUBNETID=\$($QUANTUM subnet-create --tenant_id \$TENANTID --ip_version 4 --gateway $gateway \$NETID $cidr|grep ' id '|awk '{print \$4}')
 test -z "\$SUBNETID" && exit 1
-RTID=\$(quantum router-create test-router1|grep ' id '|awk '{print \$4}')
+RTID=\$($QUANTUM router-create $net-router1|grep ' id '|awk '{print \$4}')
 test -z "\$RTID" && exit 1
-quantum router-interface-add \$RTID \$SUBNETID
+$QUANTUM router-interface-add \$RTID \$SUBNETID
 test \$? -ne 0 && exit 1
-EXTNETID=\$(quantum net-list|grep ' $PUBLIC_NET '|awk '{print \$2}')
+EXTNETID=\$($QUANTUM net-list|grep ' $PUBLIC_NET '|awk '{print \$2}')
 test -z "\$EXTNETID" && exit 1
-quantum port-list -c device_owner -c fixed_ips|grep ' network:router_gateway '|awk -F '"' '{print \$8}' > a
+$QUANTUM port-list -c device_owner -c fixed_ips|grep ' network:router_gateway '|awk -F '"' '{print \$8}' > a
 cat a
-quantum router-gateway-set \$RTID \$EXTNETID
+$QUANTUM router-gateway-set \$RTID \$EXTNETID
 test \$? -ne 0 && exit 1
-quantum port-list -c device_owner -c fixed_ips|grep ' network:router_gateway '|awk -F '"' '{print \$8}' > b
+$QUANTUM port-list -c device_owner -c fixed_ips|grep ' network:router_gateway '|awk -F '"' '{print \$8}' > b
 cat b
 GATEWAY=\$(diff a b|grep '^> '|sed 's/> //')
 rm -f a b
