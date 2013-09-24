@@ -472,27 +472,6 @@ cd devstack
 nova keypair-add $keyname > ~/$keyname
 $(sg_add_icmp default $tenant)
 $(sg_add_ssh default $tenant)
-tenant_id=\$(keystone tenant-list|awk '\$4=="$tenant"{print \$2}')
-fail=1
-for (( i=0; i<30; i++ )); do
-    $QUANTUM port-list -c tenant_id -c device_owner|grep \$tenant_id|grep 'network:dhcp'
-    if [ \$? -eq 0 ]; then
-         fail=0
-         break
-    fi
-    sleep 10
-done
-test \$fail -ne 0 && exit 1
-fail=1
-for (( i=0; i<30; i++ )); do
-    out=\$(ps ax|grep dnsmasq|grep -v grep)
-    if [ -n "\$out" ]; then
-         fail=0
-         break
-    fi
-    sleep 10
-done
-test \$fail -ne 0 && exit 1
 exit 0
 EOF
     test $? -ne 0 && return 1
@@ -620,6 +599,7 @@ function test_instance() {
     user=$5
     tenant=$6
     zone=$7
+    ipaddr=$8
     
     cat <<EOF | $SSHCMD $RYUDEV1_IP
 set -x
@@ -627,7 +607,11 @@ cd devstack
 . ./openrc $user $tenant
 IMG=\$(nova image-list|grep ' $img '|awk '{print \$2}')
 NET=\$($QUANTUM net-list|grep ' $net '|awk '{print \$2}')
-ID=\$(nova boot --flavor 1 --image \$IMG --nic net-id=\$NET --key-name $keyname --availability-zone $zone $name|grep ' id '|awk '{print \$4}')
+if [ -z "$ipaddr" ]; then
+  ID=\$(nova boot --flavor 1 --image \$IMG --nic net-id=\$NET --key-name $keyname --availability-zone $zone $name|grep ' id '|awk '{print \$4}')
+else
+  ID=\$(nova boot --flavor 1 --image \$IMG --nic net-id=\$NET,v4-fixed-ip=$ipaddr --key-name $keyname --availability-zone $zone $name|grep ' id '|awk '{print \$4}')
+fi
 fail=1
 for (( i=0; i<30; i++ )); do
     ST=\$(nova list|grep \$ID|awk '{print \$6}')
@@ -1039,18 +1023,12 @@ test_create_tenant "demo2" "demo2" "10.0.0.1" "10.0.0.0/24"
 result "tenant" $?
 prepare_test "key3" "admin" "demo2"
 result "keypair" $?
-test_instance "cirros-0.3.0-x86_64-uec_wo-metadata" "vm5" "demo2" "key3" "admin" "demo2" "nova:ryudev3"
+ip1=$(cat $TMP/fixedip-vm1)
+test_instance "cirros-0.3.0-x86_64-uec_wo-metadata" "vm5" "demo2" "key3" "admin" "demo2" "nova:ryudev3" $ip1
 result "instance" $?
 ip=$(cat $TMP/fixedip-vm5)
 test_float "vm5" "demo2" $ip "key3" "admin" "demo2" "root"
 result "floatingip" $?
-ip1=$(cat $TMP/fixedip-vm1)
-ip2=$(cat $TMP/fixedip-vm5)
-if [ "$ip1" = "$ip2" ]; then
-    result "fixedip" 0
-else
-    result "fixedip" 1
-fi
 
 TITLE="communicate to the instance of the same tenant has overlapping IP range"
 title
