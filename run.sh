@@ -232,6 +232,10 @@ which pip
 if [ \$? -ne 0 ]; then
   sudo apt-get install -y python-pip
 fi
+if dpkg -l python-pip >/dev/null 2>&1; then
+  sudo pip install -U pip
+  sudo apt-get remove python-pip
+fi
 
 ver=\$(pip show oslo.config|awk '\$1=="Version:"{print \$2}')
 ver=\${ver%%\.[0-9][^0-9.]*}
@@ -240,7 +244,7 @@ if [ \$ver \\< "1.2" ]; then
   ver=""
 fi
 if [ -z "$ver" ]; then
-  sudo pip install http://tarballs.openstack.org/oslo.config/oslo.config-1.2.0a4.tar.gz
+  sudo pip install -U oslo.config
 fi
 EOF
     result "" $? "++"
