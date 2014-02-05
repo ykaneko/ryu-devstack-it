@@ -1,5 +1,9 @@
 #!/bin/bash 
 
+unset LANG
+unset LANGUAGE
+export LC_ALL=C
+
 TESTNAME=${1:-ryudev}
 DEVSTACK=${DEVSTACK:-$TESTNAME}
 
@@ -17,18 +21,27 @@ SUMMARY=$LOG/summary.$TESTNAME.$LOGDATE
 LOGFILE=$LOG/log.$TESTNAME.$LOGDATE
 STACKLOG=$LOG/devstack.$TESTNAME
 SUDO="sudo -S"
+APTGETUPDATE="sudo apt-get update"
+APTGETINSTALL="sudo DEBIAN_FRONTEND=noninteractive apt-get install -y"
+APTGETREMOVE="sudo apt-get remove -y"
 
 case $TESTNAME in
-master-gre|master-vlan)
+master-*)
   QUANTUM="neutron"
+  RYUDEV_BASE="files/ryudev.qcow2"
+  ;;
+ml2-*)
+  QUANTUM="neutron"
+  RYUDEV_BASE="files/ryudev_saucy.qcow2"
+  OSLOWORKAROUND=True
   ;;
 *)
   QUANTUM="quantum"
+  RYUDEV_BASE="files/ryudev.qcow2"
   ;;
 esac
-METAPROXY="$QUANTUM-ns-metadata-proxy"
 
-RYUDEV_BASE="files/ryudev.qcow2"
+METAPROXY="$QUANTUM-ns-metadata-proxy"
 
 RYUDEV1_IMG="ryu1.${TESTNAME}.qcow2"
 RYUDEV1_PID="$TMP/kvm_ryudev1.pid"
@@ -225,26 +238,38 @@ function install_pkgs() {
     cat <<EOF | $SSHCMD $ipaddr
 set -x
 
-sudo apt-get update > /dev/null
-sudo apt-get install -y python-dev
+$APTGETUPDATE > /dev/null
+$APTGETINSTALL python-dev
 
 which pip
 if [ \$? -ne 0 ]; then
-  sudo apt-get install -y python-pip
+  $APTGETINSTALL python-pip
 fi
 if dpkg -l python-pip >/dev/null 2>&1; then
   sudo pip install -U pip
-  sudo apt-get remove python-pip
+  $APTGETREMOVE python-pip
 fi
 
-ver=\$(pip show oslo.config|awk '\$1=="Version:"{print \$2}')
-ver=\${ver%%\.[0-9][^0-9.]*}
-if [ \$ver \\< "1.2" ]; then
-  sudo pip uninstall oslo.config
-  ver=""
-fi
-if [ -z "$ver" ]; then
-  sudo pip install -U oslo.config
+if [ -n "$OSLOWORKAROUND" ]; then
+  if [ -d "/usr/local/lib/python2.7/dist-packages/oslo.config-1.2*" ]; then
+    sudo rm -rf /usr/local/lib/python2.7/dist-packages/oslo.config-1.2*
+  fi
+  if [ -d "/usr/local/lib/python2.7/dist-packages/oslo" ]; then
+    sudo rm -rf /usr/local/lib/python2.7/dist-packages/oslo
+  fi
+  python -c 'import oslo.config' || sudo pip install -U --force-reinstall oslo.config
+  python -c 'import oslo.rootwrap.cmd' || sudo pip install -U --force-reinstall oslo.rootwrap
+  #python -c 'import oslo.messaging' || sudo pip install -U --force-reinstall oslo.messaging
+else
+  ver=\$(pip show oslo.config|awk '\$1=="Version:"{print \$2}')
+  ver=\${ver%%\.[0-9][^0-9.]*}
+  if [ -n "\$ver" -a "\$ver" \\< "1.2" ]; then
+    sudo pip uninstall oslo.config
+    ver=""
+  fi
+  if [ -z "\$ver" ]; then
+    sudo pip install -U oslo.config
+  fi
 fi
 EOF
     result "" $? "++"
@@ -263,10 +288,10 @@ nfs=\$(dpkg -l nfs-kernel-server|grep nfs-kernel-server|awk '{print \$1}')
 libvirt=\$(dpkg -l libvirt-bin|grep libvirt-bin|awk '{print \$1}')
 if [ "\$nfs" != "ii" -o "\$libvirt" != "ii" ]; then
   if [ "\$nfs" != "ii" ]; then
-    sudo apt-get install -y nfs-kernel-server > /dev/null || exit 1
+    $APTGETINSTALL nfs-kernel-server > /dev/null || exit 1
   fi
   if [ "\$libvirt" != "ii" ]; then
-    sudo apt-get install -y libvirt-bin > /dev/null || exit 1
+    $APTGETINSTALL libvirt-bin > /dev/null || exit 1
   fi
 fi
 sudo exportfs|grep /var/lib/instances && exit 0
@@ -277,6 +302,7 @@ grep '/var/lib/instances' /etc/exports > /dev/null 2>&1
 if [ \$? -ne 0 ]; then
   sudo sh -c 'echo "/var/lib/instances 192.168.1.0/255.255.255.0(rw,sync,no_root_squash)" >> /etc/exports' || exit 1
   sudo exportfs -a || exit 1
+sudo /etc/init.d/nfs-kernel-server restart
 fi
 EOF
     result "" $? "++"
@@ -296,10 +322,10 @@ nfs=\$(dpkg -l nfs-common|grep nfs-common|awk '{print \$1}')
 libvirt=\$(dpkg -l libvirt-bin|grep libvirt-bin|awk '{print \$1}')
 if [ "\$nfs" != "ii" -o "\$libvirt" != "ii" ]; then
   if [ "\$nfs" != "ii" ]; then
-    sudo apt-get install -y nfs-common > /dev/null || exit 1
+    $APTGETINSTALL nfs-common > /dev/null || exit 1
   fi
   if [ "\$libvirt" != "ii" ]; then
-    sudo apt-get install -y libvirt-bin > /dev/null || exit 1
+    $APTGETINSTALL libvirt-bin > /dev/null || exit 1
   fi
 fi
 mount|grep /var/lib/instances && exit 0
@@ -308,7 +334,7 @@ sudo chgrp libvirtd /var/lib/instances || exit 1
 sudo chmod g+w /var/lib/instances || exit 1
 grep '/var/lib/instances' /etc/fstab > /dev/null 2>&1
 if [ \$? -ne 0 ]; then
-  sudo sh -c 'echo "$nfsip:/var/lib/instances /var/lib/instances nfs defaults,soft,nfsvers=3 0 0" >> /etc/fstab' || exit 1
+  sudo sh -c 'echo "$nfsip:/var/lib/instances /var/lib/instances nfs defaults,soft 0 0" >> /etc/fstab' || exit 1
   sudo mount /var/lib/instances || exit 1
 fi
 EOF
@@ -336,6 +362,19 @@ sudo sed -i 's/#*listen_tls = .*/listen_tls = 0/; s/#*listen_tcp = .*/listen_tcp
 sudo sed -i 's/^libvirtd_opts=.*/libvirtd_opts="-d -l"/' /etc/default/libvirt-bin
 sudo sed -i 's/^env libvirtd_opts=.*/env libvirtd_opts="-d -l"/' /etc/init/libvirt-bin.conf
 sudo service libvirt-bin restart
+EOF
+}
+
+function setup_phy-br() {
+    ipaddr=$1
+    vmname=$2
+
+    TITLE="setup physical bridge: $vmname"
+    title "++"
+    cat <<EOF | $SSHCMD $ipaddr
+set -x
+sudo ovs-vsctl --no-wait -- --may-exist add-br br-eth1
+sudo ovs-vsctl --no-wait -- --may-exist add-port br-eth1 eth1
 EOF
 }
 
@@ -559,18 +598,25 @@ setup_libvirtd $RYUDEV1_IP ryudev1
 setup_libvirtd $RYUDEV2_IP ryudev2
 setup_libvirtd $RYUDEV3_IP ryudev3
 
+if [ $TESTNAME = "ml2-vlan" ]; then
+  setup_phy-br $RYUDEV1_IP ryudev1
+  setup_phy-br $RYUDEV2_IP ryudev2
+  setup_phy-br $RYUDEV3_IP ryudev3
+fi
+
 pause "start devstack"
 
-start_devstack $RYUDEV1_IP ryudev1
-start_devstack $RYUDEV2_IP ryudev2
-start_devstack $RYUDEV3_IP ryudev3
+start_devstack $RYUDEV1_IP ryudev1|sed 's/^/[ryudev1]/'
+start_devstack $RYUDEV2_IP ryudev2|sed 's/^/[ryudev2]/'
+start_devstack $RYUDEV3_IP ryudev3|sed 's/^/[ryudev3]/'
 $SUDO ip route add 192.168.100.0/24 via $RYUDEV1_IP dev $BR_NAME1
 
-TITLE="upload non-metadata instance image"
-title "++"
-IMGFILE=cirros-0.3.0-x86_64-uec_custom.tar.gz
-$SCPCMD files/$IMGFILE ubuntu@$RYUDEV1_IP:
-cat <<EOF | $SSHCMD $RYUDEV1_IP
+if [ $TESTNAME = "folsom" ]; then
+    TITLE="upload non-metadata instance image"
+    title "++"
+    IMGFILE=cirros-0.3.0-x86_64-uec_custom.tar.gz
+    $SCPCMD files/$IMGFILE ubuntu@$RYUDEV1_IP:
+    cat <<EOF | $SSHCMD $RYUDEV1_IP
 set -x
 tar zxf $IMGFILE
 cd devstack
@@ -590,8 +636,8 @@ glance --os-auth-token \$TOKEN --os-image-url http://\$GLANCE/ image-create --na
 test \$? -ne 0 && exit 1
 exit 0
 EOF
-result "" $? "++"
-
+    result "" $? "++"
+fi
 
 ##################################################################3
 
@@ -616,6 +662,7 @@ if [ -z "$ipaddr" ]; then
 else
   ID=\$(nova boot --flavor 1 --image \$IMG --nic net-id=\$NET,v4-fixed-ip=$ipaddr --key-name $keyname --availability-zone $zone $name|grep ' id '|awk '{print \$4}')
 fi
+test -z "\$ID" && exit 1
 fail=1
 for (( i=0; i<30; i++ )); do
     ST=\$(nova list|grep \$ID|awk '{print \$6}')
@@ -631,7 +678,7 @@ test \$fail -ne 0 && exit 1
 fail=1
 for (( i=0; i<36; i++ )); do
     CONSOLE_LOG="\$(nova console-log \$ID)"
-    echo "\${CONSOLE_LOG}"|egrep 'cirros login:'
+    echo "\${CONSOLE_LOG}"|sed 's/^/[$name]/'|egrep 'cirros login:'
     if [ \$? -eq 0 ]; then
         fail=0
         break
@@ -640,7 +687,7 @@ for (( i=0; i<36; i++ )); do
 done
 test \$fail -ne 0 && exit 1
 CONSOLE_LOG="\$(nova console-log \$ID)"
-echo "\${CONSOLE_LOG}"|egrep 'Lease of .* obtained,'
+echo "\${CONSOLE_LOG}"|sed 's/^/[$name]/'|egrep 'Lease of .* obtained,'
 test \$? -ne 0 && exit 1
 IP=\$(nova list|grep $name|awk '{print \$$NOVA_LIST_IP_COL}'|sed 's/.*=\\([0-9.]*\\).*/\\1/')
 echo -n \$IP > ~/fixedip-$name
@@ -877,6 +924,7 @@ set -x
 cd devstack
 . ./openrc $user $tenant
 nova live-migration $name $host
+test \$? -ne 0 && exit 1
 fail=1
 for (( i=0; i<6; i++ )); do
     ST=\$(nova list|grep $name|awk '{print \$6}')
@@ -1028,10 +1076,18 @@ result "tenant" $?
 prepare_test "key3" "admin" "demo2"
 result "keypair" $?
 ip1=$(cat $TMP/fixedip-vm1)
-test_instance "cirros-0.3.0-x86_64-uec_wo-metadata" "vm5" "demo2" "key3" "admin" "demo2" "nova:ryudev3" $ip1
+if [ $TESTNAME = "folsom" ]; then
+    test_instance "cirros-0.3.0-x86_64-uec_wo-metadata" "vm5" "demo2" "key3" "admin" "demo2" "nova:ryudev3" $ip1
+else
+    test_instance "cirros-0.3.1-x86_64-uec" "vm5" "demo2" "key3" "admin" "demo2" "nova:ryudev3" $ip1
+fi
 result "instance" $?
 ip=$(cat $TMP/fixedip-vm5)
-test_float "vm5" "demo2" $ip "key3" "admin" "demo2" "root"
+if [ $TESTNAME = "folsom" ]; then
+    test_float "vm5" "demo2" $ip "key3" "admin" "demo2" "root"
+else
+    test_float "vm5" "demo2" $ip "key3" "admin" "demo2" "cirros"
+fi
 result "floatingip" $?
 
 TITLE="communicate to the instance of the same tenant has overlapping IP range"
@@ -1045,7 +1101,11 @@ TITLE="communicate to the instance of the other tenant has overlapping IP range"
 title
 ip1=$(cat $TMP/floatingip-vm5)
 ip2=$(cat $TMP/fixedip-vm2)
-test_traffic $ip1 $ip2 "key3" "root" "key1" "cirros"
+if [ $TESTNAME = "folsom" ]; then
+    test_traffic $ip1 $ip2 "key3" "root" "key1" "cirros"
+else
+    test_traffic $ip1 $ip2 "key3" "cirros" "key1" "cirros"
+fi
 rc=$?
 result "" $((!rc))
 
@@ -1053,7 +1113,11 @@ TITLE="communicate via Floating-IP to the instance of the other tenant has overl
 title
 ip1=$(cat $TMP/floatingip-vm5)
 ip2=$(cat $TMP/floatingip-vm1)
-test_traffic $ip1 $ip2 "key3" "root" "key1" "cirros"
+if [ $TESTNAME = "folsom" ]; then
+    test_traffic $ip1 $ip2 "key3" "root" "key1" "cirros"
+else
+    test_traffic $ip1 $ip2 "key3" "cirros" "key1" "cirros"
+fi
 result "" $?
 
 pause "finish"
