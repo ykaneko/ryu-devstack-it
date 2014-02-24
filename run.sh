@@ -175,7 +175,7 @@ function run_vm() {
     title "++"
     if [ ! -f $image ]; then
         if [ ! -f $RYUDEV_BASE ]; then
-          wget $RYUDEV_SRC -O $RYUDEV_BASE
+          wget -q $RYUDEV_SRC -O $RYUDEV_BASE
           test $? -ne 0 && die 1
         fi
         cp $RYUDEV_BASE $image
