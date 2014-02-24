@@ -26,18 +26,19 @@ APTGETINSTALL="sudo DEBIAN_FRONTEND=noninteractive apt-get install -y"
 APTGETREMOVE="sudo apt-get remove -y"
 
 case $TESTNAME in
-master-*)
-  QUANTUM="neutron"
-  RYUDEV_BASE="files/ryudev.qcow2"
-  ;;
-ml2-*)
+master-*|ml2-*)
   QUANTUM="neutron"
   RYUDEV_BASE="files/ryudev_saucy.qcow2"
+  RYUDEV_SRC="http://sourceforge.net/projects/ryu/files/vmimages/Ryu-DevStack-IT/ryudev_saucy.qcow2/download"
   OSLOWORKAROUND=True
+  if [ $TESTNAME = 'ml2-vlan' ]; then
+    PHYBR=True
+  fi
   ;;
 *)
   QUANTUM="quantum"
   RYUDEV_BASE="files/ryudev.qcow2"
+  RYUDEV_SRC="http://sourceforge.net/projects/ryu/files/vmimages/Ryu-DevStack-IT/ryudev2.qcow2/download"
   ;;
 esac
 
@@ -172,7 +173,11 @@ function run_vm() {
     
     TITLE="start virtual machine: $image"
     title "++"
-    if [ ! -e $image ]; then
+    if [ ! -f $image ]; then
+        if [ ! -f $RYUDEV_BASE ]; then
+          wget $RYUDEV_SRC -O $RYUDEV_BASE
+          test $? -ne 0 && die 1
+        fi
         cp $RYUDEV_BASE $image
     fi
     $SUDO kvm \
@@ -563,6 +568,7 @@ fi
 
 trap die_intr SIGINT
 echo_summary "++ preparing networking"
+$SUDO chmod 600 files/id_rsa
 $SUDO brctl addbr $BR_NAME1
 $SUDO ip link set up $BR_NAME1
 $SUDO ip addr add 192.168.1.1/24 dev $BR_NAME1
@@ -586,9 +592,9 @@ run_vm $RYUDEV1_IMG $RYUDEV1_PID $RYUDEV1_PORT $RYUDEV1_MAC1 $RYUDEV1_IP $RYUDEV
 run_vm $RYUDEV2_IMG $RYUDEV2_PID $RYUDEV2_PORT $RYUDEV2_MAC1 $RYUDEV2_IP $RYUDEV2_MAC2 $RYUDEV2_VNC
 run_vm $RYUDEV3_IMG $RYUDEV3_PID $RYUDEV3_PORT $RYUDEV3_MAC1 $RYUDEV3_IP $RYUDEV3_MAC2 $RYUDEV3_VNC
 
-install_pkgs $RYUDEV1_IP ryudev1
-install_pkgs $RYUDEV2_IP ryudev2
-install_pkgs $RYUDEV3_IP ryudev3
+install_pkgs $RYUDEV1_IP ryudev1|sed -u 's/^/[ryudev1]/'
+install_pkgs $RYUDEV2_IP ryudev2|sed -u 's/^/[ryudev2]/'
+install_pkgs $RYUDEV3_IP ryudev3|sed -u 's/^/[ryudev3]/'
 
 export_instance_dir $RYUDEV1_IP ryudev1
 mount_instance_dir $RYUDEV2_IP ryudev2 $RYUDEV1_IP
@@ -598,7 +604,7 @@ setup_libvirtd $RYUDEV1_IP ryudev1
 setup_libvirtd $RYUDEV2_IP ryudev2
 setup_libvirtd $RYUDEV3_IP ryudev3
 
-if [ $TESTNAME = "ml2-vlan" ]; then
+if [ -n "$PHYBR" ]; then
   setup_phy-br $RYUDEV1_IP ryudev1
   setup_phy-br $RYUDEV2_IP ryudev2
   setup_phy-br $RYUDEV3_IP ryudev3
@@ -606,9 +612,9 @@ fi
 
 pause "start devstack"
 
-start_devstack $RYUDEV1_IP ryudev1|sed 's/^/[ryudev1]/'
-start_devstack $RYUDEV2_IP ryudev2|sed 's/^/[ryudev2]/'
-start_devstack $RYUDEV3_IP ryudev3|sed 's/^/[ryudev3]/'
+start_devstack $RYUDEV1_IP ryudev1|sed -u 's/^/[ryudev1]/'
+start_devstack $RYUDEV2_IP ryudev2|sed -u 's/^/[ryudev2]/'
+start_devstack $RYUDEV3_IP ryudev3|sed -u 's/^/[ryudev3]/'
 $SUDO ip route add 192.168.100.0/24 via $RYUDEV1_IP dev $BR_NAME1
 
 if [ $TESTNAME = "folsom" ]; then
@@ -677,8 +683,8 @@ done
 test \$fail -ne 0 && exit 1
 fail=1
 for (( i=0; i<36; i++ )); do
-    CONSOLE_LOG="\$(nova console-log \$ID)"
-    echo "\${CONSOLE_LOG}"|sed 's/^/[$name]/'|egrep 'cirros login:'
+    CONSOLE_LOG="\$(nova console-log \$ID|sed -u 's/^/[$name]/')"
+    echo "\${CONSOLE_LOG}"|egrep 'cirros login:'
     if [ \$? -eq 0 ]; then
         fail=0
         break
@@ -686,8 +692,8 @@ for (( i=0; i<36; i++ )); do
     sleep 10
 done
 test \$fail -ne 0 && exit 1
-CONSOLE_LOG="\$(nova console-log \$ID)"
-echo "\${CONSOLE_LOG}"|sed 's/^/[$name]/'|egrep 'Lease of .* obtained,'
+CONSOLE_LOG="\$(nova console-log \$ID|sed -u 's/^/[$name]/')"
+echo "\${CONSOLE_LOG}"|egrep 'Lease of .* obtained,'
 test \$? -ne 0 && exit 1
 IP=\$(nova list|grep $name|awk '{print \$$NOVA_LIST_IP_COL}'|sed 's/.*=\\([0-9.]*\\).*/\\1/')
 echo -n \$IP > ~/fixedip-$name

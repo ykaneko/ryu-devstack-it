@@ -43,6 +43,6 @@ master-gre|master-vlan)
     update "master"
     ;;
 ml2-gre|ml2-vlan)
-    update "ryu-ml2"
+    update "bp/ryu-ml2-driver"
     ;;
 esac

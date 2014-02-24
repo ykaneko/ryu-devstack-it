@@ -58,9 +58,7 @@ tocmat6でssh、gitコマンドを実行できるようにします。
 ::
 
     $ git clone https://github.com/ykaneko/ryu-devstack-it jenkins
-    $ wget -O jenkins/files/ryudev.qcow2 http://sourceforge.net/projects/ryu/files/vmimages/Ryu-DevStack-IT/ryudev.qcow2/download
     $ sudo chown -R tomcat6.tomcat6 jenkins
-    $ sudo chmod 600 files/id_rsa
 
 ::
 
@@ -69,7 +67,7 @@ tocmat6でssh、gitコマンドを実行できるようにします。
     |-- files
     |   |-- cirros-0.3.0-x86_64-uec_custom.tar.gz  ... metadataアクセスを抑制
     |   |                                              したinstanceイメージ
-    |   |-- id_rsa          ... instance用sshキー
+    |   |-- id_rsa          ... テストVM用sshキー
     |   |-- id_rsa.pub      ...   〃
     |   `-- ryudev.qcow2    ... テストVMイメージ(devstackを起動するVM)
     |-- ifdown              ... テストVM用ネットワーク設定スクリプト
@@ -92,8 +90,12 @@ tocmat6でssh、gitコマンドを実行できるようにします。
     |   |   `-- devstack    ... grizzly用(stable/grizzly)devstack
     |   |-- master-gre
     |   |   `-- devstack    ... master用devstack
-    |   `-- master-vlan
-    |       `-- devstack    ... master用devstack
+    |   |-- master-vlan
+    |   |   `-- devstack    ... master用devstack
+    |   |-- ml2-gre
+    |   |   `-- devstack    ... ofagent用devstack
+    |   `-- ml2-vlan
+    |       `-- devstack    ... ofagent用devstack
     |-- logs
     |   |-- devstack.folsom
     |   |   |-- ryudev1                         ... ryudev1のログ
@@ -252,8 +254,8 @@ githubのcommitのRSSが更新されたときにテストを実行するため�
 
 ジョブを作ったら、手動で実行(ビルド実行)します。
 
-master-vlanおよびgrizzly-gre、grizzly-vlanも同様にして作ります。
-ビルド・トリガのURLとビルドのシェルスクリプトが若干違うだけです。
+master-vlanおよびml2-gre、ml2-vlan、grizzly-gre、grizzly-vlanも同様にして
+作ります。ビルド・トリガのURLとビルドのシェルスクリプトが若干違うだけです。
 
   - master-vlan
 
@@ -264,6 +266,26 @@ master-vlanおよびgrizzly-gre、grizzly-vlanも同様にして作ります。
             set -e
             ./update-devstack.sh master-vlan
             ./run.sh master-vlan
+
+  - ml2-gre
+
+    - ビルド
+        - シェルスクリプト::
+
+            #!/bin/bash
+            set -e
+            ./update-devstack.sh ml2-gre
+            ./run.sh ml2-gre
+
+  - ml2-vlan
+
+    - ビルド
+        - シェルスクリプト::
+
+            #!/bin/bash
+            set -e
+            ./update-devstack.sh ml2-vlan
+            ./run.sh ml2-vlan
 
   - grizzly-gre
 
