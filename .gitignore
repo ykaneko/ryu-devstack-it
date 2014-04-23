@@ -1,6 +1,5 @@
-devstack/
 logs/
 tmp/
-files/ryudev.qcow2
-ryu*.qcow2
-build/
+files/*.qcow2
+doc/build/
+*.qcow2

@@ -5,7 +5,19 @@ unset LANGUAGE
 export LC_ALL=C
 
 TESTNAME=${1:-ryudev}
-DEVSTACK=${DEVSTACK:-$TESTNAME}
+
+VERSIONS="ryudev|havana-ryu-gre|havana-ryu-vlan"
+for plugin in ryu-gre ryu-vlan ofa-gre ofa-vxlan ofa-vlan; do
+    VERSIONS="$VERSIONS|icehouse-${plugin}"
+done
+for plugin in ofa-gre ofa-vxlan ofa-vlan; do
+    VERSIONS="$VERSIONS|master-${plugin}"
+done
+if [[ ! "$TESTNAME" =~ ($VERSIONS) ]]; then
+    echo "unsupported version: $TESTNAME"
+    echo "$0 $VERSIONS"
+    exit 1
+fi
 
 VERBOSE=${VERBOSE:-False}
 DEBUG=${DEBUG:-False}
@@ -20,26 +32,34 @@ LOGDATE=$(date +%Y%m%d%H%M%S)
 SUMMARY=$LOG/summary.$TESTNAME.$LOGDATE
 LOGFILE=$LOG/log.$TESTNAME.$LOGDATE
 STACKLOG=$LOG/devstack.$TESTNAME
+LOCALRC="files/devstack/localrc.$TESTNAME"
+LOCALCONF="files/devstack/local.conf.$TESTNAME"
 SUDO="sudo -S"
-APTGETUPDATE="sudo apt-get update"
-APTGETINSTALL="sudo DEBIAN_FRONTEND=noninteractive apt-get install -y"
-APTGETREMOVE="sudo apt-get remove -y"
+APTGETUPDATE="$SUDO apt-get update"
+APTGETINSTALL="$SUDO DEBIAN_FRONTEND=noninteractive apt-get install -y"
+APTGETREMOVE="$SUDO apt-get remove -y"
 
-case $TESTNAME in
-master-*|ml2-*)
-  QUANTUM="neutron"
-  RYUDEV_BASE="files/ryudev_saucy.qcow2"
-  RYUDEV_SRC="http://sourceforge.net/projects/ryu/files/vmimages/Ryu-DevStack-IT/ryudev_saucy.qcow2/download"
-  OSLOWORKAROUND=True
-  if [ $TESTNAME = 'ml2-vlan' ]; then
+QUANTUM="neutron"
+RYUDEV_BASE="files/ryudev3.qcow2"
+RYUDEV_SRC="http://sourceforge.net/projects/ryu/files/vmimages/Ryu-DevStack-IT/ryudev3.qcow2/download"
+if [[ $TESTNAME == *-ofa-vlan ]]; then
     PHYBR=True
-  fi
-  ;;
+fi
+if [[ $TESTNAME == *-ofa-* ]]; then
+    LCWORKAROUND=True
+fi
+
+DEVSTACK_REPO=https://github.com/openstack-dev/devstack.git
+case $TESTNAME in
+havana-*)
+    DEVSTACK_BRANCH=stable/havana
+    ;;
+icehouse-*)
+    DEVSTACK_BRANCH=stable/icehouse
+    ;;
 *)
-  QUANTUM="quantum"
-  RYUDEV_BASE="files/ryudev.qcow2"
-  RYUDEV_SRC="http://sourceforge.net/projects/ryu/files/vmimages/Ryu-DevStack-IT/ryudev2.qcow2/download"
-  ;;
+    DEVSTACK_BRANCH=master
+    ;;
 esac
 
 METAPROXY="$QUANTUM-ns-metadata-proxy"
@@ -51,7 +71,8 @@ RYUDEV1_MAC1="f0:00:00:00:00:01"
 RYUDEV1_IP="192.168.1.10"
 RYUDEV1_HOSTNAME="ryudev1"
 RYUDEV1_MAC2="f0:00:00:00:00:11"
-RYUDEV1_VNC="unix:$TMP/kvm_ryudev1_vnc.sock"
+#RYUDEV1_VNC="unix:$TMP/kvm_ryudev1_vnc.sock"
+RYUDEV1_VNC="127.0.0.1:0"
 
 RYUDEV2_IMG="ryu2.${TESTNAME}.qcow2"
 RYUDEV2_PID="$TMP/kvm_ryudev2.pid"
@@ -60,7 +81,8 @@ RYUDEV2_MAC1="f0:00:00:00:00:02"
 RYUDEV2_IP="192.168.1.11"
 RYUDEV2_HOSTNAME="ryudev2"
 RYUDEV2_MAC2="f0:00:00:00:00:12"
-RYUDEV2_VNC="unix:$TMP/kvm_ryudev2_vnc.sock"
+#RYUDEV2_VNC="unix:$TMP/kvm_ryudev2_vnc.sock"
+RYUDEV2_VNC="127.0.0.1:1"
 
 RYUDEV3_IMG="ryu3.${TESTNAME}.qcow2"
 RYUDEV3_PID="$TMP/kvm_ryudev3.pid"
@@ -69,7 +91,8 @@ RYUDEV3_MAC1="f0:00:00:00:00:03"
 RYUDEV3_IP="192.168.1.12"
 RYUDEV3_HOSTNAME="ryudev3"
 RYUDEV3_MAC2="f0:00:00:00:00:13"
-RYUDEV3_VNC="unix:$TMP/kvm_ryudev3_vnc.sock"
+#RYUDEV3_VNC="unix:$TMP/kvm_ryudev3_vnc.sock"
+RYUDEV3_VNC="127.0.0.1:2"
 
 EXTIF=${EXTIF:-eth0}
 
@@ -158,6 +181,7 @@ function die_intr() {
     die 1
 }
 function die_error() {
+    trap "" SIGINT
     pause "terminate"
     die 1
 }
@@ -175,21 +199,21 @@ function run_vm() {
     title "++"
     if [ ! -f $image ]; then
         if [ ! -f $RYUDEV_BASE ]; then
-          wget -q $RYUDEV_SRC -O $RYUDEV_BASE
-          test $? -ne 0 && die 1
+            wget -q $RYUDEV_SRC -O $RYUDEV_BASE
+            test $? -ne 0 && die 1
         fi
         cp $RYUDEV_BASE $image
     fi
     $SUDO kvm \
-      -M pc-1.0 -enable-kvm \
-      -m 2048 -smp 1,sockets=1,cores=1,threads=1 \
-      -drive file=$image,if=virtio,format=qcow2 \
-      -netdev tap,script=./ifup,downscript=./ifdown,id=hostnet0 \
-      -device virtio-net-pci,netdev=hostnet0,mac=$mac1 \
-      -netdev tap,script=./ifup2,downscript=./ifdown2,id=hostnet1 \
-      -device virtio-net-pci,netdev=hostnet1,mac=$mac2 \
-      -display vnc=$vnc -monitor telnet::$port,server,nowait \
-      -pidfile $pidfile -daemonize
+        -M pc-1.0 -enable-kvm \
+        -m 2048 -smp 1,sockets=1,cores=1,threads=1 \
+        -drive file=$image,if=virtio,format=qcow2 \
+        -netdev tap,script=./ifup,downscript=./ifdown,id=hostnet0 \
+        -device e1000,netdev=hostnet0,mac=$mac1 \
+        -netdev tap,script=./ifup2,downscript=./ifdown2,id=hostnet1 \
+        -device e1000,netdev=hostnet1,mac=$mac2 \
+        -display vnc=$vnc -monitor telnet::$port,server,nowait \
+        -pidfile $pidfile -daemonize
     result "" $? "++"
     
     TITLE="wait for virtual machine to come up: $image"
@@ -251,32 +275,23 @@ if [ \$? -ne 0 ]; then
   $APTGETINSTALL python-pip
 fi
 if dpkg -l python-pip >/dev/null 2>&1; then
-  sudo pip install -U pip
+  $SUDO pip install -U pip
   $APTGETREMOVE python-pip
 fi
+python -c 'import pbr' || $SUDO pip install -U --force-reinstall pbr
 
-if [ -n "$OSLOWORKAROUND" ]; then
-  if [ -d "/usr/local/lib/python2.7/dist-packages/oslo.config-1.2*" ]; then
-    sudo rm -rf /usr/local/lib/python2.7/dist-packages/oslo.config-1.2*
-  fi
-  if [ -d "/usr/local/lib/python2.7/dist-packages/oslo" ]; then
-    sudo rm -rf /usr/local/lib/python2.7/dist-packages/oslo
-  fi
-  python -c 'import oslo.config' || sudo pip install -U --force-reinstall oslo.config
-  python -c 'import oslo.rootwrap.cmd' || sudo pip install -U --force-reinstall oslo.rootwrap
-  #python -c 'import oslo.messaging' || sudo pip install -U --force-reinstall oslo.messaging
-else
-  ver=\$(pip show oslo.config|awk '\$1=="Version:"{print \$2}')
-  ver=\${ver%%\.[0-9][^0-9.]*}
-  if [ -n "\$ver" -a "\$ver" \\< "1.2" ]; then
-    sudo pip uninstall oslo.config
-    ver=""
-  fi
-  if [ -z "\$ver" ]; then
-    sudo pip install -U oslo.config
-  fi
+if [ -d "/usr/local/lib/python2.7/dist-packages/oslo.config-1.2*" ]; then
+  $SUDO rm -rf /usr/local/lib/python2.7/dist-packages/oslo.config-1.2*
 fi
+if [ -d "/usr/local/lib/python2.7/dist-packages/oslo" ]; then
+  $SUDO rm -rf /usr/local/lib/python2.7/dist-packages/oslo
+fi
+python -c 'import oslo.config' || $SUDO pip install -U --force-reinstall oslo.config
+python -c 'import oslo.rootwrap.cmd' || $SUDO pip install -U --force-reinstall oslo.rootwrap
+python -c 'import oslo.messaging' || $SUDO pip install -U --force-reinstall oslo.messaging
+python -c 'import oslo.vmware' || $SUDO pip install -U --force-reinstall oslo.vmware
 EOF
+
     result "" $? "++"
 }
 
@@ -299,15 +314,15 @@ if [ "\$nfs" != "ii" -o "\$libvirt" != "ii" ]; then
     $APTGETINSTALL libvirt-bin > /dev/null || exit 1
   fi
 fi
-sudo exportfs|grep /var/lib/instances && exit 0
-sudo mkdir -p /var/lib/instances
-sudo chgrp libvirtd /var/lib/instances || exit 1
-sudo chmod g+w /var/lib/instances || exit 1
+$SUDO exportfs|grep /var/lib/instances && exit 0
+$SUDO mkdir -p /var/lib/instances
+$SUDO chgrp libvirtd /var/lib/instances || exit 1
+$SUDO chmod g+w /var/lib/instances || exit 1
 grep '/var/lib/instances' /etc/exports > /dev/null 2>&1
 if [ \$? -ne 0 ]; then
-  sudo sh -c 'echo "/var/lib/instances 192.168.1.0/255.255.255.0(rw,sync,no_root_squash)" >> /etc/exports' || exit 1
-  sudo exportfs -a || exit 1
-sudo /etc/init.d/nfs-kernel-server restart
+  $SUDO sh -c 'echo "/var/lib/instances 192.168.1.0/255.255.255.0(rw,sync,no_root_squash)" >> /etc/exports' || exit 1
+  $SUDO exportfs -a || exit 1
+  $SUDO /etc/init.d/nfs-kernel-server restart
 fi
 EOF
     result "" $? "++"
@@ -334,13 +349,13 @@ if [ "\$nfs" != "ii" -o "\$libvirt" != "ii" ]; then
   fi
 fi
 mount|grep /var/lib/instances && exit 0
-sudo mkdir -p /var/lib/instances
-sudo chgrp libvirtd /var/lib/instances || exit 1
-sudo chmod g+w /var/lib/instances || exit 1
+$SUDO mkdir -p /var/lib/instances
+$SUDO chgrp libvirtd /var/lib/instances || exit 1
+$SUDO chmod g+w /var/lib/instances || exit 1
 grep '/var/lib/instances' /etc/fstab > /dev/null 2>&1
 if [ \$? -ne 0 ]; then
-  sudo sh -c 'echo "$nfsip:/var/lib/instances /var/lib/instances nfs defaults,soft 0 0" >> /etc/fstab' || exit 1
-  sudo mount /var/lib/instances || exit 1
+  $SUDO sh -c 'echo "$nfsip:/var/lib/instances /var/lib/instances nfs defaults,soft,vers=3,clientaddr=$ipaddr 0 0" >> /etc/fstab' || exit 1
+  $SUDO mount /var/lib/instances || exit 1
 fi
 EOF
     result "" $? "++"
@@ -352,7 +367,7 @@ function umount_instance_dir() {
 
     TITLE="umount instance dir: $vmname"
     title "++"
-    $SSHCMD $ipaddr sudo umount -f /var/lib/instances
+    $SSHCMD $ipaddr $SUDO umount -f /var/lib/instances
 }
 
 function setup_libvirtd() {
@@ -363,10 +378,10 @@ function setup_libvirtd() {
     title "++"
     cat <<EOF | $SSHCMD $ipaddr
 set -x
-sudo sed -i 's/#*listen_tls = .*/listen_tls = 0/; s/#*listen_tcp = .*/listen_tcp = 1/; s/#*auth_tcp = .*/auth_tcp = "none"/' /etc/libvirt/libvirtd.conf
-sudo sed -i 's/^libvirtd_opts=.*/libvirtd_opts="-d -l"/' /etc/default/libvirt-bin
-sudo sed -i 's/^env libvirtd_opts=.*/env libvirtd_opts="-d -l"/' /etc/init/libvirt-bin.conf
-sudo service libvirt-bin restart
+$SUDO sed -i 's/#*listen_tls = .*/listen_tls = 0/; s/#*listen_tcp = .*/listen_tcp = 1/; s/#*auth_tcp = .*/auth_tcp = "none"/' /etc/libvirt/libvirtd.conf
+$SUDO sed -i 's/^libvirtd_opts=.*/libvirtd_opts="-d -l"/' /etc/default/libvirt-bin
+$SUDO sed -i 's/^env libvirtd_opts=.*/env libvirtd_opts="-d -l"/' /etc/init/libvirt-bin.conf
+$SUDO service libvirt-bin restart
 EOF
 }
 
@@ -378,8 +393,8 @@ function setup_phy-br() {
     title "++"
     cat <<EOF | $SSHCMD $ipaddr
 set -x
-sudo ovs-vsctl --no-wait -- --may-exist add-br br-eth1
-sudo ovs-vsctl --no-wait -- --may-exist add-port br-eth1 eth1
+$SUDO ovs-vsctl --no-wait -- --may-exist add-br br-eth1
+$SUDO ovs-vsctl --no-wait -- --may-exist add-port br-eth1 eth1
 EOF
 }
 
@@ -392,12 +407,24 @@ function start_devstack() {
     if [ ! -e $TOP/devstack ]; then
         tar zxf devstack.tar.gz
     fi
-    $SSHCMD $ipaddr rm -rf devstack
-    $SCPCMD -r devstack/$DEVSTACK/devstack ubuntu@$ipaddr:
+    LCCMD=""
+    if [ -n "$LCWORKAROUND" ]; then
+        LCCMD="$SUDO touch '/\$Q_PLUGIN_CONF_FILE'"
+    fi
+    cat <<EOF | $SSHCMD $ipaddr
+set -x
+$LCCMD
+$SUDO rm -rf devstack
+git clone $DEVSTACK_REPO -b $DEVSTACK_BRANCH
+EOF
+    $SCPCMD $LOCALRC ubuntu@$ipaddr:devstack/localrc
+    if [ -r $LOCALCONF ]; then
+        $SCPCMD $LOCALCONF ubuntu@$ipaddr:devstack/local.conf
+    fi
     result "" $? "++"
     
     $SSHCMD $ipaddr rm -rf /opt/stack/glance/bin
-    $SSHCMD $ipaddr sudo ip link set up eth1
+    $SSHCMD $ipaddr $SUDO ip link set up eth1
     
     TITLE="start devstack: $vmname/$ipaddr"
     title "++"
@@ -415,7 +442,7 @@ function start_devstack() {
     done
     msg=""
     if [ $fail -ne 0 ]; then
-        kill $pid
+        $SUDO kill -9 $pid
         msg="timeout"
     fi
     wait $pid
@@ -435,17 +462,17 @@ function stop_devstack() {
     title "++"
     cat <<EOF | $SSHCMD $ipaddr
 set -x
-test -e /etc/logrotate.d/mysql-server && sudo logrotate /etc/logrotate.d/mysql-server
-sudo killall dnsmasq
-sudo killall $METAPROXY
-ip link|awk '\$2 ~ /tap|qvo|qbr/{sub(/:/,"",\$2);print \$2}'|xargs --verbose -r -l1 sudo ip link set down
-ip link|awk '\$2 ~ /tap|qvo|qbr/{sub(/:/,"",\$2);print \$2}'|xargs --verbose -r -l1 sudo ip link delete
-sudo ovs-vsctl del-br br-int
-sudo ovs-vsctl del-br br-ex
-ip netns|while read ns; do sudo ip netns delete \$ns; done
-sudo ovs-vsctl show|sed 's/^  *//'|egrep '^(Bridge|Port)'|tr -d '"'|while read ln; do key=\$(echo \$ln|awk '{print \$1}'); val=\$(echo \$ln|awk '{print \$2}'); if [ "\$key" = "Bridge" ]; then br=\$val; elif [ "\$key" = "Port" -a "\$val" != "\$br" ]; then sudo ovs-vsctl del-port \$br \$val; fi; done
-cd /opt/stack/data/$QUANTUM/external/pids/ && ls -1|xargs -n 10 -r -t sudo rm -rf
-cd /opt/stack/data/$QUANTUM/dhcp/ && ls -1|xargs -n 10 -r -t sudo rm -rf
+test -e /etc/logrotate.d/mysql-server && $SUDO logrotate /etc/logrotate.d/mysql-server
+$SUDO killall dnsmasq
+$SUDO killall $METAPROXY
+ip link|awk '\$2 ~ /tap|qvo|qbr/{sub(/:/,"",\$2);print \$2}'|xargs --verbose -r -l1 $SUDO ip link set down
+ip link|awk '\$2 ~ /tap|qvo|qbr/{sub(/:/,"",\$2);print \$2}'|xargs --verbose -r -l1 $SUDO ip link delete
+$SUDO ovs-vsctl del-br br-int
+$SUDO ovs-vsctl del-br br-ex
+ip netns|while read ns; do $SUDO ip netns delete \$ns; done
+$SUDO ovs-vsctl show|sed 's/^  *//'|egrep '^(Bridge|Port)'|tr -d '"'|while read ln; do key=\$(echo \$ln|awk '{print \$1}'); val=\$(echo \$ln|awk '{print \$2}'); if [ "\$key" = "Bridge" ]; then br=\$val; elif [ "\$key" = "Port" -a "\$val" != "\$br" ]; then $SUDO ovs-vsctl del-port \$br \$val; fi; done
+cd /opt/stack/data/$QUANTUM/external/pids/ && ls -1|xargs -n 10 -r -t $SUDO rm -rf
+cd /opt/stack/data/$QUANTUM/dhcp/ && ls -1|xargs -n 10 -r -t $SUDO rm -rf
 EOF
 }
 
@@ -453,59 +480,43 @@ EOF
 function sg_add_icmp() {
     sgname=$1
     tenant=$2
-    if [ $TESTNAME = "folsom" ]; then
-        echo "nova secgroup-add-rule $sgname icmp -1 -1 0.0.0.0/0"
-    else
-        cat <<EOF
+    cat <<EOF
 tenant_id=\$(keystone tenant-list|awk '\$4=="$tenant"{print \$2}')
 sg_id=\$($QUANTUM security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
 $QUANTUM security-group-rule-create --protocol icmp \$sg_id
 EOF
-    fi
 }
 
 function sg_del_icmp() {
     sgname=$1
     tenant=$2
-    if [ $TESTNAME = "folsom" ]; then
-        echo "nova secgroup-delete-rule $sgname icmp -1 -1 0.0.0.0/0"
-    else
-        cat <<EOF
+    cat <<EOF
 tenant_id=\$(keystone tenant-list|awk '\$4=="$tenant"{print \$2}')
 sg_id=\$($QUANTUM security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
 rule_id=\$($QUANTUM security-group-rule-list -c id -c protocol -c security_group|awk '(\$6=="$sgname" && \$4=="icmp"){print \$2}')
 $QUANTUM security-group-rule-delete \$rule_id
 EOF
-    fi
 }
 
 function sg_add_ssh() {
     sgname=$1
     tenant=$2
-    if [ $TESTNAME = "folsom" ]; then
-        echo "nova secgroup-add-rule $sgname tcp 22 22 0.0.0.0/0"
-    else
-        cat <<EOF
+    cat <<EOF
 tenant_id=\$(keystone tenant-list|awk '\$4=="$tenant"{print \$2}')
 sg_id=\$($QUANTUM security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
 $QUANTUM security-group-rule-create --protocol tcp --port-range-min 22 --port-range-max 22 \$sg_id
 EOF
-    fi
 }
 
 function sg_del_ssh() {
     sgname=$1
     tenant=$2
-    if [ $TESTNAME = "folsom" ]; then
-        echo "nova secgroup-delete-rule $sgname tcp 22 22 0.0.0.0/0"
-    else
-        cat <<EOF
+    cat <<EOF
 tenant_id=\$(keystone tenant-list|awk '\$4=="$tenant"{print \$2}')
 sg_id=\$($QUANTUM security-group-list -c id -c name -c tenant_id|awk '(\$6=="'\$tenant_id'" && \$4=="$sgname"){print \$2}')
 rule_id=\$($QUANTUM security-group-rule-list -c id -c protocol -c security_group|awk '(\$6=="$sgname" && \$4=="tcp"){print \$2}')
 $QUANTUM security-group-rule-delete \$rule_id
 EOF
-    fi
 }
 
 function prepare_test() {
@@ -535,18 +546,18 @@ cd devstack
 . ./openrc admin admin
 tenants=\$(keystone tenant-list|awk '\$6=="True"{print \$4}')
 for tenant in \$tenants; do
-    . ./openrc admin $tenant
-    nova list|while read line; do
-        ID=\$(echo \$line|awk '{print \$2}')
-        test -n "\$ID" && nova delete \$ID
-    done
-    for (( i=0; i<6; i++ )); do
-        LN=\$(nova list|wc -l)
-        if [ \$LN -le 4 ]; then
-            break
-        fi
-        sleep 10
-    done
+  . ./openrc admin $tenant
+  nova list|while read line; do
+    ID=\$(echo \$line|awk '{print \$2}')
+    test -n "\$ID" && nova delete \$ID
+  done
+  for (( i=0; i<6; i++ )); do
+    LN=\$(nova list|wc -l)
+    if [ \$LN -le 4 ]; then
+      break
+    fi
+    sleep 10
+  done
 done
 EOF
 }
@@ -592,9 +603,9 @@ run_vm $RYUDEV1_IMG $RYUDEV1_PID $RYUDEV1_PORT $RYUDEV1_MAC1 $RYUDEV1_IP $RYUDEV
 run_vm $RYUDEV2_IMG $RYUDEV2_PID $RYUDEV2_PORT $RYUDEV2_MAC1 $RYUDEV2_IP $RYUDEV2_MAC2 $RYUDEV2_VNC
 run_vm $RYUDEV3_IMG $RYUDEV3_PID $RYUDEV3_PORT $RYUDEV3_MAC1 $RYUDEV3_IP $RYUDEV3_MAC2 $RYUDEV3_VNC
 
-install_pkgs $RYUDEV1_IP ryudev1|sed -u 's/^/[ryudev1]/'
-install_pkgs $RYUDEV2_IP ryudev2|sed -u 's/^/[ryudev2]/'
-install_pkgs $RYUDEV3_IP ryudev3|sed -u 's/^/[ryudev3]/'
+install_pkgs $RYUDEV1_IP ryudev1
+install_pkgs $RYUDEV2_IP ryudev2
+install_pkgs $RYUDEV3_IP ryudev3
 
 export_instance_dir $RYUDEV1_IP ryudev1
 mount_instance_dir $RYUDEV2_IP ryudev2 $RYUDEV1_IP
@@ -605,45 +616,17 @@ setup_libvirtd $RYUDEV2_IP ryudev2
 setup_libvirtd $RYUDEV3_IP ryudev3
 
 if [ -n "$PHYBR" ]; then
-  setup_phy-br $RYUDEV1_IP ryudev1
-  setup_phy-br $RYUDEV2_IP ryudev2
-  setup_phy-br $RYUDEV3_IP ryudev3
+    setup_phy-br $RYUDEV1_IP ryudev1
+    setup_phy-br $RYUDEV2_IP ryudev2
+    setup_phy-br $RYUDEV3_IP ryudev3
 fi
 
 pause "start devstack"
 
-start_devstack $RYUDEV1_IP ryudev1|sed -u 's/^/[ryudev1]/'
-start_devstack $RYUDEV2_IP ryudev2|sed -u 's/^/[ryudev2]/'
-start_devstack $RYUDEV3_IP ryudev3|sed -u 's/^/[ryudev3]/'
+start_devstack $RYUDEV1_IP ryudev1
+start_devstack $RYUDEV2_IP ryudev2
+start_devstack $RYUDEV3_IP ryudev3
 $SUDO ip route add 192.168.100.0/24 via $RYUDEV1_IP dev $BR_NAME1
-
-if [ $TESTNAME = "folsom" ]; then
-    TITLE="upload non-metadata instance image"
-    title "++"
-    IMGFILE=cirros-0.3.0-x86_64-uec_custom.tar.gz
-    $SCPCMD files/$IMGFILE ubuntu@$RYUDEV1_IP:
-    cat <<EOF | $SSHCMD $RYUDEV1_IP
-set -x
-tar zxf $IMGFILE
-cd devstack
-. ./openrc admin admin
-GLANCE=$RYUDEV1_IP:9292
-TOKEN=\$(keystone token-get|grep ' id '|awk '{print \$4}')
-test -z "\$TOKEN" && exit 1
-KERNEL="cirros-0.3.0-x86_64-vmlinuz"
-RAMDISK="cirros-0.3.0-x86_64-initrd"
-IMAGE="cirros-0.3.0-x86_64-blank.img"
-IMAGENAME="cirros-0.3.0-x86_64-uec_wo-metadata"
-KERNEL_ID=\$(glance --os-auth-token \$TOKEN --os-image-url http://\$GLANCE/ image-create --name "\$IMAGENAME-kernel" --is-public True --container-format aki --disk-format aki < "../\$KERNEL"|grep ' id '|awk '{print \$4}')
-test -z "\$KERNEL_ID" && exit 1
-RAMDISK_ID=\$(glance --os-auth-token \$TOKEN --os-image-url http://\$GLANCE/ image-create --name "\$IMAGENAME-ramdisk" --is-public True --container-format ari --disk-format ari < "../\$RAMDISK"|grep ' id '|awk '{print \$4}')
-test -z "\$RAMDISK_ID" && exit 1
-glance --os-auth-token \$TOKEN --os-image-url http://\$GLANCE/ image-create --name "\$IMAGENAME" --is-public True --container-format ami --disk-format ami --property kernel_id=\$KERNEL_ID --property ramdisk_id=\$RAMDISK_ID < "../\$IMAGE"
-test \$? -ne 0 && exit 1
-exit 0
-EOF
-    result "" $? "++"
-fi
 
 ##################################################################3
 
@@ -671,25 +654,25 @@ fi
 test -z "\$ID" && exit 1
 fail=1
 for (( i=0; i<30; i++ )); do
-    ST=\$(nova list|grep \$ID|awk '{print \$6}')
-    if [ "\$ST" = "ACTIVE" ]; then
-        fail=0
-        break
-    elif [ "\$ST" = "ERROR" ]; then
-        break
-    fi
-    sleep 10
+  ST=\$(nova list|grep \$ID|awk '{print \$6}')
+  if [ "\$ST" = "ACTIVE" ]; then
+    fail=0
+    break
+  elif [ "\$ST" = "ERROR" ]; then
+    break
+  fi
+  sleep 10
 done
 test \$fail -ne 0 && exit 1
 fail=1
 for (( i=0; i<36; i++ )); do
-    CONSOLE_LOG="\$(nova console-log \$ID|sed -u 's/^/[$name]/')"
-    echo "\${CONSOLE_LOG}"|egrep 'cirros login:'
-    if [ \$? -eq 0 ]; then
-        fail=0
-        break
-    fi
-    sleep 10
+  CONSOLE_LOG="\$(nova console-log \$ID|sed -u 's/^/[$name]/')"
+  echo "\${CONSOLE_LOG}"|egrep 'cirros login:'
+  if [ \$? -eq 0 ]; then
+    fail=0
+    break
+  fi
+  sleep 10
 done
 test \$fail -ne 0 && exit 1
 CONSOLE_LOG="\$(nova console-log \$ID|sed -u 's/^/[$name]/')"
@@ -910,7 +893,7 @@ cat b
 GATEWAY=\$(diff a b|grep '^> '|sed 's/> //')
 rm -f a b
 test -z \$GATEWAY && exit 1
-sudo route add -net $cidr gw \$GATEWAY
+$SUDO route add -net $cidr gw \$GATEWAY
 exit 0
 EOF
     test $? -ne 0 && return 1
@@ -933,14 +916,14 @@ nova live-migration $name $host
 test \$? -ne 0 && exit 1
 fail=1
 for (( i=0; i<6; i++ )); do
-    ST=\$(nova list|grep $name|awk '{print \$6}')
-    if [ "\$ST" = "ACTIVE" ]; then
-        fail=0
-        break
-    elif [ "\$ST" = "ERROR" ]; then
-        break
-    fi
-    sleep 10
+  ST=\$(nova list|grep $name|awk '{print \$6}')
+  if [ "\$ST" = "ACTIVE" ]; then
+    fail=0
+    break
+  elif [ "\$ST" = "ERROR" ]; then
+    break
+  fi
+  sleep 10
 done
 test \$fail -ne 0 && exit 1
 dest=\$(nova show $name|awk '\$2=="OS-EXT-SRV-ATTR:host"{print \$4}')
@@ -974,12 +957,12 @@ cd devstack
 nova delete $name
 fail=1
 for (( i=0; i<6; i++ )); do
-    nova list|grep $name
-    if [ \$? -ne 0 ]; then
-        fail=0
-        break
-    fi
-    sleep 10
+  nova list|grep $name
+  if [ \$? -ne 0 ]; then
+    fail=0
+    break
+  fi
+  sleep 10
 done
 test \$fail -ne 0 && exit 1
 exit 0
@@ -1082,18 +1065,10 @@ result "tenant" $?
 prepare_test "key3" "admin" "demo2"
 result "keypair" $?
 ip1=$(cat $TMP/fixedip-vm1)
-if [ $TESTNAME = "folsom" ]; then
-    test_instance "cirros-0.3.0-x86_64-uec_wo-metadata" "vm5" "demo2" "key3" "admin" "demo2" "nova:ryudev3" $ip1
-else
-    test_instance "cirros-0.3.1-x86_64-uec" "vm5" "demo2" "key3" "admin" "demo2" "nova:ryudev3" $ip1
-fi
+test_instance "cirros-0.3.1-x86_64-uec" "vm5" "demo2" "key3" "admin" "demo2" "nova:ryudev3" $ip1
 result "instance" $?
 ip=$(cat $TMP/fixedip-vm5)
-if [ $TESTNAME = "folsom" ]; then
-    test_float "vm5" "demo2" $ip "key3" "admin" "demo2" "root"
-else
-    test_float "vm5" "demo2" $ip "key3" "admin" "demo2" "cirros"
-fi
+test_float "vm5" "demo2" $ip "key3" "admin" "demo2" "cirros"
 result "floatingip" $?
 
 TITLE="communicate to the instance of the same tenant has overlapping IP range"
@@ -1107,11 +1082,7 @@ TITLE="communicate to the instance of the other tenant has overlapping IP range"
 title
 ip1=$(cat $TMP/floatingip-vm5)
 ip2=$(cat $TMP/fixedip-vm2)
-if [ $TESTNAME = "folsom" ]; then
-    test_traffic $ip1 $ip2 "key3" "root" "key1" "cirros"
-else
-    test_traffic $ip1 $ip2 "key3" "cirros" "key1" "cirros"
-fi
+test_traffic $ip1 $ip2 "key3" "cirros" "key1" "cirros"
 rc=$?
 result "" $((!rc))
 
@@ -1119,11 +1090,7 @@ TITLE="communicate via Floating-IP to the instance of the other tenant has overl
 title
 ip1=$(cat $TMP/floatingip-vm5)
 ip2=$(cat $TMP/floatingip-vm1)
-if [ $TESTNAME = "folsom" ]; then
-    test_traffic $ip1 $ip2 "key3" "root" "key1" "cirros"
-else
-    test_traffic $ip1 $ip2 "key3" "cirros" "key1" "cirros"
-fi
+test_traffic $ip1 $ip2 "key3" "cirros" "key1" "cirros"
 result "" $?
 
 pause "finish"

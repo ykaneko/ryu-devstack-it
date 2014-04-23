@@ -1,0 +1,46 @@
+HOST_NAME=$(hostname)
+SERVICE_HOST_NAME=ryudev1
+SERVICE_HOST=192.168.1.10
+
+if [ "$HOST_NAME" = "$SERVICE_HOST_NAME" ]; then
+    # controller node
+    disable_service n-net cinder c-sch c-api c-vol n-novnc n-xvnc n-cauth horizon
+    enable_service q-svc q-agt q-dhcp q-l3 q-meta q-lbaas neutron ryu
+else
+    # compute node
+    disable_all_services
+    enable_service n-cpu neutron q-agt
+fi
+
+FLOATING_RANGE=192.168.100.0/24
+PUBLIC_NETWORK_GATEWAY=192.168.100.1
+Q_PLUGIN=ryu
+Q_ALLOW_OVERLAPPING_IP=True
+LOGFILE=$HOME/logs/devstack
+SCREEN_LOGDIR=$HOME/logs/stack
+INSTANCES_PATH=/var/lib/instances
+
+Q_HOST=$SERVICE_HOST
+MYSQL_HOST=$SERVICE_HOST
+RABBIT_HOST=$SERVICE_HOST
+GLANCE_HOSTPORT=$SERVICE_HOST:9292
+KEYSTONE_AUTH_HOST=$SERVICE_HOST
+KEYSTONE_SERVICE_HOST=$SERVICE_HOST
+
+# ryu
+RYU_API_HOST=$SERVICE_HOST
+RYU_OFP_HOST=$SERVICE_HOST
+RYU_APPS=ryu.app.gre_tunnel,ryu.app.quantum_adapter,ryu.app.rest,ryu.app.rest_conf_switch,ryu.app.rest_tunnel,ryu.app.tunnel_port_updater,ryu.app.rest_quantum
+
+# password
+MYSQL_PASSWORD=mysql
+RABBIT_PASSWORD=rabbit
+SERVICE_TOKEN=service
+SERVICE_PASSWORD=admin
+SERVICE_TENANT_NAME=service
+ADMIN_PASSWORD=admin
+
+LOG_COLOR=False
+RECLONE=yes
+# Uncomment the following line to save time by skipping checking of packages that need to be installed
+#OFFLINE=True
