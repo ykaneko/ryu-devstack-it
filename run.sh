@@ -404,9 +404,6 @@ function start_devstack() {
     
     TITLE="install devstack: $vmname/$ipaddr"
     title "++"
-    if [ ! -e $TOP/devstack ]; then
-        tar zxf devstack.tar.gz
-    fi
     LCCMD=""
     if [ -n "$LCWORKAROUND" ]; then
         LCCMD="$SUDO touch '/\$Q_PLUGIN_CONF_FILE'"
