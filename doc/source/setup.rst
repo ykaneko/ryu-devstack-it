@@ -1,129 +1,119 @@
-============================================
-Jenkins / Tomcat / Ubuntu 12.04 Server amd64
-============================================
+=============================
+Ryuマルチノードシステムテスト
+=============================
 
 インストール & セットアップ
-=============================
+===========================
 
 パッケージのインストール
 ------------------------
 
 ::
 
-    $ sudo apt-get install jenkins-tomcat git kvm libvirt-bin bridge-utils \
-    ubuntu-vm-builder mysql-client-core-5.5 vim lv
+    $ sudo apt-get install jenkins git kvm libvirt-bin bridge-utils
 
-jenkins-tomcatパッケージをインストールすると、JenkinsとTomcat(およびそれらの
-依存パッケージ)がインストール、セットアップします。
+テストの実行はJenkinsによって行います。
 
-gitパッケージは、devstackを更新するためにgitコマンドを使用するため必要です。
+gitパッケージは、テスト用スクリプト類の取得のために必要となります。
 kvm、bridge-utilsは、テスト環境構築のために使用します。
-mysql-client-core-5.5は、テストスクリプトが使用します。
 
 
 sudo
 ----
 
-Jenkinsはユーザtomcat6で実行されます。Jenkinsから起動されるテストスクリプトも
-同ユーザで実行されるので、tomcat6が、sudoをパスワードなしで実行できるように
+Jenkinsはユーザjenkinsで実行されます。Jenkinsから起動されるテストスクリプトも
+同ユーザで実行されるので、jenkinsが、sudoをパスワードなしで実行できるように
 設定します。
 
 ::
 
     $ sudo visudo
-    tomcat6   ALL=(ALL:ALL) NOPASSWD:ALL
+    jenkins   ALL=(ALL:ALL) NOPASSWD:ALL
 
 
 SSH/git
 -------
 
-tocmat6でssh、gitコマンドを実行できるようにします。
+jenkinsユーザがssh、gitコマンドを実行できるようにします。
 
 ::
 
-    $ cd /usr/share/tomcat6
+    $ cd /var/lib/jenkins
     $ sudo mkdir .ssh
     $ sudo vi .gitconfig
     [user]
             name = Ryu Network Operating System
             email = <mail address>
-    $ sudo chown tomcat6.tomcat6 .ssh .gitconfig
+    $ sudo chown jenkins.jenkins .ssh .gitconfig
 
 
 テスト環境の構築
 ----------------
 
-/home/ryu/jenkinsにテスト環境を構築します。
+/opt/ryu-devstack-it/にテスト環境を構築します。
 
 ::
 
-    $ git clone https://github.com/ykaneko/ryu-devstack-it jenkins
-    $ sudo chown -R tomcat6.tomcat6 jenkins
+    $ cd /opt
+    $ sudo git clone https://github.com/ykaneko/ryu-devstack-it
+    $ sudo chown -R jenkins.jenkins ryu-devstack-it
 
 ::
 
-    jenkins
-    |-- devstack.tar.gz     ... devstack/のアーカイブ
+    ryu-devstack-it
+    |-- doc                 ... ドキュメント
     |-- files
-    |   |-- cirros-0.3.0-x86_64-uec_custom.tar.gz  ... metadataアクセスを抑制
-    |   |                                              したinstanceイメージ
+    |   |-- devstack        ... 各ターゲット用のlocalrcとlocal.confファイル
+    |   |   |-- local.conf.icehouse-ofa-gre
+    |   |   |-- local.conf.icehouse-ofa-vlan
+    |   |   |-- local.conf.icehouse-ofa-vxlan
+    |   |   |-- local.conf.master-ofa-gre
+    |   |   |-- local.conf.master-ofa-vlan
+    |   |   |-- local.conf.master-ofa-vxlan
+    |   |   |-- localrc.havana-ryu-gre
+    |   |   |-- localrc.havana-ryu-vlan
+    |   |   |-- localrc.icehouse-ofa-gre
+    |   |   |-- localrc.icehouse-ofa-vlan
+    |   |   |-- localrc.icehouse-ofa-vxlan
+    |   |   |-- localrc.icehouse-ryu-gre
+    |   |   |-- localrc.icehouse-ryu-vlan
+    |   |   |-- localrc.master-ofa-gre
+    |   |   |-- localrc.master-ofa-vlan
+    |   |   `-- localrc.master-ofa-vxlan
     |   |-- id_rsa          ... テストVM用sshキー
-    |   |-- id_rsa.pub      ...   〃
-    |   `-- ryudev.qcow2    ... テストVMイメージ(devstackを起動するVM)
+    |   `-- id_rsa.pub      ...   〃
     |-- ifdown              ... テストVM用ネットワーク設定スクリプト
     |-- ifdown2             ...   〃
     |-- ifup                ...   〃
     |-- ifup2               ...   〃
-    |-- run.sh              ... テストスクリプト
-    `-- update-devstack.sh  ... devstack更新スクリプト
+    `-- run.sh              ... テストスクリプト
 
 テストスクリプトを実行すると以下のファイルが追加されます。
 
 ::
 
-    |-- devstack
-    |   |-- folsom
-    |   |   `-- devstack    ... folsom用(stable/folsom)devstack
-    |   |-- grizzly-gre
-    |   |   `-- devstack    ... grizzly用(stable/grizzly)devstack
-    |   |-- grizzly-vlan
-    |   |   `-- devstack    ... grizzly用(stable/grizzly)devstack
-    |   |-- master-gre
-    |   |   `-- devstack    ... master用devstack
-    |   |-- master-vlan
-    |   |   `-- devstack    ... master用devstack
-    |   |-- ml2-gre
-    |   |   `-- devstack    ... ofagent用devstack
-    |   `-- ml2-vlan
-    |       `-- devstack    ... ofagent用devstack
     |-- logs
-    |   |-- devstack.folsom
+    |   |-- devstack.havana-ryu-gre
     |   |   |-- ryudev1                         ... ryudev1のログ
     |   |   |   |-- devstack                    ... devstackのログ
-    |   |   |   |-- devstack.2012-12-18-042841
+    |   |   |   |-- devstack.2014-04-30-080045
     |   |   |   |-- devstack.summary            ... devstackのサマリ
-    |   |   |   |-- devstack.2012-12-18-042841.2012-12-18-042841.summary
+    |   |   |   |-- devstack.2014-04-30-082158.2014-04-30-082158.summary
     |   |   |   `-- stack                       ... SCREENのログ
-    |   |   |       |-- screen-c-api.2012-12-18-042841.log
+    |   |   |       |-- screen-c-api.2014-04-30-080045.log.gz
     |   |   |       |-- screen-c-api.log
                       <略>
-    |   |   |       |-- screen-ryu.2012-12-20-111639.log
+    |   |   |       |-- screen-ryu.2014-04-30-080045.log.gz
     |   |   |       `-- screen-ryu.log
     |   |   |-- ryudev2
     |   |   `-- ryudev3
-    |   |-- devstack.grizzly-gre                ... devstack.folsomと同様
               <略>
-    |   |-- devstack.master-gre                 ... devstack.folsomと同様
-              <略>
-    |   |-- log.folsom.20121217174718           ... テストスクリプトのログ
-    |   |-- log.grizzly-gre.20121217180154
-    |   |-- log.master-gre.20130603171036
-    |   |-- summary.folsom.20121217174718       ... テストスクリプトのサマリ
-    |   |-- summary.grizzly-gre.20121220203026      (標準出力の内容)
-    |   `-- summary.master-gre.20130603171036
-    |-- ryu1.qcow2                              ... ryudev1のディスクイメージ
-    |-- ryu2.qcow2                              ... ryudev2のディスクイメージ
-    |-- ryu3.qcow2                              ... ryudev3のディスクイメージ
+    |   |-- log.havana-ryu-gre.20140430162730   ... テストスクリプトのログ
+    |   `-- summary.havana-ryu-gre.20140430162730  ... テストスクリプトのサマリ
+    |                                                  (標準出力の内容)
+    |-- ryu1.havana-ryu-gre.qcow2               ... ryudev1のディスクイメージ
+    |-- ryu2.havana-ryu-gre.qcow2               ... ryudev2のディスクイメージ
+    |-- ryu3.havana-ryu-gre.qcow2               ... ryudev3のディスクイメージ
     `-- tmp
         |-- dnsmasq.log                         ... ホスト上のdnsmasqのログ
         |-- dnsmasq.lease                       ... dnsmasqのleaseファイル
@@ -133,11 +123,13 @@ tocmat6でssh、gitコマンドを実行できるようにします。
         |-- fixedip-vm2
         |-- fixedip-vm3
         |-- fixedip-vm4
+        |-- fixedip-vm5
         |-- floatingip-vm1                      ... テストスクリプトで起動した
                                                     instanceのFloating-IP
         |-- floatingip-vm2
         |-- floatingip-vm3
         |-- floatingip-vm4
+        |-- floatingip-vm5
         |-- key1                                ... KeyPair
         |-- key2
         |-- key3
@@ -165,15 +157,17 @@ Jenkinsの設定はWeb画面で行います。
 テストは1つのみに制限します。他のテストが実行中であった場合は、そのテストが
 完了するまで待たされます。
 
-  - Jenkinsの管理 ≫ システムの設定
+- Jenkinsの管理 ≫ システムの設定
 
-    - 同時ビルド数: 1
+  - 同時ビルド数: 1
 
-    - Email通知
-      - SMTPサーバー: メールサーバ
-      - 管理者のメールアドレス: <通知メールのFromアドレス>
+  - Email通知
 
-    - 画面下の"保存"をクリックして保存します。
+    - SMTPサーバー: メールサーバ
+
+    - 管理者のメールアドレス: <通知メールのFromアドレス>
+
+  - 画面下の"保存"をクリックして保存します。
 
 
 URLTrigger Pluginの追加
@@ -182,68 +176,68 @@ URLTrigger Pluginの追加
 githubのcommitのRSSが更新されたときにテストを実行するため、URLTrigger Plugin
 を使用します。
 
-  - Jenkinsの管理 ≫ プラグインの管理 ≫ 利用可能
+- Jenkinsの管理 ≫ プラグインの管理 ≫ 利用可能
 
-    - URLTrigger Plugin にチェックを付ける
+  - URLTrigger Plugin にチェックを付ける
 
-    - 画面下の"インストール"をクリックしてインストールします。
+  - 画面下の"インストール"をクリックしてインストールします。
 
-    - インストール画面の
-      ``インストール完了後、ジョブがなければJenkinsを再起動する``
-      にチェックを付け、インストール後にJenkinsを再起動するようにします。
+  - インストール画面の
+    ``インストール完了後、ジョブがなければJenkinsを再起動する``
+    にチェックを付け、インストール後にJenkinsを再起動するようにします。
 
 
 ジョブの設定
 ------------
 
-  - 新規ジョブ作成
-    - ジョブ名: master-gre
+- 新規ジョブ作成
+    - ジョブ名: havana-ryu-gre
     - フリースタイル・プロジェクトのビルド
+    - 古いビルドの破棄
+        - 方針: Log Rotation
+            - ビルドの保持日数: 30
 
-    - 高度な設定...
-      - カスタムワークスペースの使用
-      - ディレクトリ: /home/ryu/jenkins/
+    - プロジェクトの高度な設定オプション
+        - カスタムワークスペースの使用
+        - ディレクトリ: /opt/ryu-devstack-it/
 
     - ソースコード管理システム
-      - なし
+        - なし
 
     - ビルド・トリガ
-      ::
-
-          [URLTrigger] - Poll with a URL
-            URL: https://github.com/osrg/ryu/commits/master.atom
-            URL Response Check
-              Check the last modification Date
-              Inspect URL content
-            
-            URL: https://github.com/openstack/quantum/commits/master.atom
-            URL Response Check
-              Check the last modification Date
-              Inspect URL content
-            
-            URL: https://github.com/openstack/nova/commits/master.atom
-            URL Response Check
-              Check the last modification Date
-              Inspect URL content
-
-      - Schedule
         ::
 
-            */30 * * * *
+            [URLTrigger] - Poll with a URL
+              URL: https://github.com/osrg/ryu/commits/master.atom
+              URL Response Check
+                Inspect URL content
+                
+              URL: https://github.com/openstack/neutron/commits/stable/havana.atom
+              URL Response Check
+                Inspect URL content
+                
+              URL: https://github.com/openstack/nova/commits/stable/havana.atom
+              URL Response Check
+                Inspect URL content
+
+        - Schedule
+            ::
+
+                H/30 * * * *
 
     - ビルド
-      - シェルの実行
-      - シェルスクリプト::
+        - シェルの実行
+            - シェルスクリプト::
 
-          #!/bin/bash
-          set -e
-          ./update-devstack.sh master-gre
-          ./run.sh master-gre
+                #!/bin/bash
+                rm -rf ./logs
+                ./run.sh havana-ryu-gre
 
-      ※ run.shは環境変数EXTIF(デフォルトeth0)を参照します。
-        インターネットへの経路に使用するインターフェースの名前が
-        eth0以外のときは明示的に指定してください。
-          例. EXTIF=em1 ./run.sh master-gre
+            ※ run.shは環境変数EXTIF(デフォルトeth0)を参照します。
+            インターネットへの経路に使用するインターフェースの名前が
+            eth0以外のときは明示的に指定してください。
+
+            例. EXTIF=em1 ./run.sh havana-ryu-gre
 
     - ビルド後の処理  (必要に応じて設定します)
         - Email通知
@@ -252,72 +246,154 @@ githubのcommitのRSSが更新されたときにテストを実行するため�
 
     - 画面下の"保存"をクリックしてジョブを登録します。
 
-ジョブを作ったら、手動で実行(ビルド実行)します。
 
-master-vlanおよびml2-gre、ml2-vlan、grizzly-gre、grizzly-vlanも同様にして
-作ります。ビルド・トリガのURLとビルドのシェルスクリプトが若干違うだけです。
+以下のジョブも同様にして作ります。ビルド・トリガのURLとビルドのシェル
+スクリプトが若干違うだけです。
 
-  - master-vlan
+- havana-ryu-vlan
+- icehouse-ryu-gre
+- icehouse-ryu-vlan
+- icehouse-ofa-gre
+- icehouse-ofa-vlan
+- icehouse-ofa-vxlan
+- master-ofa-gre
+- master-ofa-vlan
+- master-ofa-vxlan
 
-    - ビルド
-        - シェルスクリプト::
 
-            #!/bin/bash
-            set -e
-            ./update-devstack.sh master-vlan
-            ./run.sh master-vlan
+各々のビルド・トリガのURLとシェルスクリプトの設定内容は以下の通りです。
 
-  - ml2-gre
-
-    - ビルド
-        - シェルスクリプト::
-
-            #!/bin/bash
-            set -e
-            ./update-devstack.sh ml2-gre
-            ./run.sh ml2-gre
-
-  - ml2-vlan
-
-    - ビルド
-        - シェルスクリプト::
-
-            #!/bin/bash
-            set -e
-            ./update-devstack.sh ml2-vlan
-            ./run.sh ml2-vlan
-
-  - grizzly-gre
-
+- havana-ryu-vlan
     - ビルド・トリガ
         - [URLTrigger] - Poll with a URL::
 
             URL: https://github.com/osrg/ryu/commits/master.atom
-            URL: https://github.com/openstack/quantum/commits/stable/grizzly.atom
-            URL: https://github.com/openstack/nova/commits/stable/grizzly.atom
+            URL: https://github.com/openstack/neutron/commits/stable/havana.atom
+            URL: https://github.com/openstack/nova/commits/stable/havana.atom
 
     - ビルド
         - シェルスクリプト::
 
             #!/bin/bash
-            set -e
-            ./update-devstack.sh grizzly-gre
-            ./run.sh grizzly-gre
+            rm -rf ./logs
+            ./run.sh havana-ryu-vlan
 
-  - grizzly-vlan
-
+- icehouse-ryu-gre
     - ビルド・トリガ
         - [URLTrigger] - Poll with a URL::
 
             URL: https://github.com/osrg/ryu/commits/master.atom
-            URL: https://github.com/openstack/quantum/commits/stable/grizzly.atom
-            URL: https://github.com/openstack/nova/commits/stable/grizzly.atom
+            URL: https://github.com/openstack/quantum/commits/stable/icehouse.atom
+            URL: https://github.com/openstack/nova/commits/stable/icehouse.atom
 
     - ビルド
         - シェルスクリプト::
 
             #!/bin/bash
-            set -e
-            ./update-devstack.sh grizzly-vlan
-            ./run.sh grizzly-vlan
+            rm -rf ./logs
+            ./run.sh icehouse-ryu-gre
 
+- icehouse-ryu-vlan
+    - ビルド・トリガ
+        - [URLTrigger] - Poll with a URL::
+
+            URL: https://github.com/osrg/ryu/commits/master.atom
+            URL: https://github.com/openstack/quantum/commits/stable/icehouse.atom
+            URL: https://github.com/openstack/nova/commits/stable/icehouse.atom
+
+    - ビルド
+        - シェルスクリプト::
+
+            #!/bin/bash
+            rm -rf ./logs
+            ./run.sh icehouse-ryu-vlan
+
+- icehouse-ofa-gre
+    - ビルド・トリガ
+        - [URLTrigger] - Poll with a URL::
+
+            URL: https://github.com/osrg/ryu/commits/master.atom
+            URL: https://github.com/openstack/quantum/commits/stable/icehouse.atom
+            URL: https://github.com/openstack/nova/commits/stable/icehouse.atom
+
+    - ビルド
+        - シェルスクリプト::
+
+            #!/bin/bash
+            rm -rf ./logs
+            ./run.sh icehouse-ofa-gre
+
+- icehouse-ofa-vlan
+    - ビルド・トリガ
+        - [URLTrigger] - Poll with a URL::
+
+            URL: https://github.com/osrg/ryu/commits/master.atom
+            URL: https://github.com/openstack/quantum/commits/stable/icehouse.atom
+            URL: https://github.com/openstack/nova/commits/stable/icehouse.atom
+
+    - ビルド
+        - シェルスクリプト::
+
+            #!/bin/bash
+            rm -rf ./logs
+            ./run.sh icehouse-ofa-vlan
+
+- icehouse-ofa-vxlan
+    - ビルド・トリガ
+        - [URLTrigger] - Poll with a URL::
+
+            URL: https://github.com/osrg/ryu/commits/master.atom
+            URL: https://github.com/openstack/quantum/commits/stable/icehouse.atom
+            URL: https://github.com/openstack/nova/commits/stable/icehouse.atom
+
+    - ビルド
+        - シェルスクリプト::
+
+            #!/bin/bash
+            rm -rf ./logs
+            ./run.sh icehouse-ofa-vxlan
+
+- master-ofa-gre
+    - ビルド・トリガ
+        - [URLTrigger] - Poll with a URL::
+
+            URL: https://github.com/osrg/ryu/commits/master.atom
+            URL: https://github.com/openstack/quantum/commits/master.atom
+            URL: https://github.com/openstack/nova/commits/master.atom
+
+    - ビルド
+        - シェルスクリプト::
+
+            #!/bin/bash
+            rm -rf ./logs
+            ./run.sh master-ofa-gre
+
+- master-ofa-vlan
+    - ビルド・トリガ
+        - [URLTrigger] - Poll with a URL::
+
+            URL: https://github.com/osrg/ryu/commits/master.atom
+            URL: https://github.com/openstack/quantum/commits/master.atom
+            URL: https://github.com/openstack/nova/commits/master.atom
+
+    - ビルド
+        - シェルスクリプト::
+
+            #!/bin/bash
+            rm -rf ./logs
+            ./run.sh master-ofa-vlan
+
+- master-ofa-vxlan
+    - ビルド・トリガ
+        - [URLTrigger] - Poll with a URL::
+
+            URL: https://github.com/osrg/ryu/commits/master.atom
+            URL: https://github.com/openstack/quantum/commits/master.atom
+            URL: https://github.com/openstack/nova/commits/master.atom
+
+    - ビルド
+        - シェルスクリプト::
+
+            #!/bin/bash
+            rm -rf ./logs
+            ./run.sh master-ofa-vxlan
