@@ -421,6 +421,7 @@ EOF
     result "" $? "++"
     
     $SSHCMD $ipaddr rm -rf /opt/stack/glance/bin
+    $SSHCMD $ipaddr rm -rf /var/tmp/*
     $SSHCMD $ipaddr $SUDO ip link set up eth1
     
     TITLE="start devstack: $vmname/$ipaddr"
