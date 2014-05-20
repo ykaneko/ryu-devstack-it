@@ -645,7 +645,7 @@ function test_instance() {
 set -x
 cd devstack
 . ./openrc $user $tenant
-IMG=\$(nova image-list|grep -E ' $img '|awk '{print \$2}')
+IMG=\$(nova image-list|grep -E ' $img '|awk '{print \$2}'|head -1)
 NET=\$($QUANTUM net-list|grep ' $net '|awk '{print \$2}')
 if [ -z "$ipaddr" ]; then
   ID=\$(nova boot --flavor 1 --image \$IMG --nic net-id=\$NET --key-name $keyname --availability-zone $zone $name|grep ' id '|awk '{print \$4}')
