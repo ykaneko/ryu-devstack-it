@@ -107,6 +107,7 @@ SCPCMD="$SCP -i $SSH_KEY"
 
 PUBLIC_NET="public"
 PRIVATE_NET="private"
+IMAGE_NAME="cirros-[0-9.]+-x86_64-uec"
 
 NOVA_LIST_IP_COL=12
 
@@ -290,6 +291,7 @@ python -c 'import oslo.config' || $SUDO pip install -U --force-reinstall oslo.co
 python -c 'import oslo.rootwrap.cmd' || $SUDO pip install -U --force-reinstall oslo.rootwrap
 python -c 'import oslo.messaging' || $SUDO pip install -U --force-reinstall oslo.messaging
 python -c 'import oslo.vmware' || $SUDO pip install -U --force-reinstall oslo.vmware
+python -c 'import tinyrpc' || $SUDO pip install -U --force-reinstall tinyrpc
 EOF
 
     result "" $? "++"
@@ -643,7 +645,7 @@ function test_instance() {
 set -x
 cd devstack
 . ./openrc $user $tenant
-IMG=\$(nova image-list|grep ' $img '|awk '{print \$2}')
+IMG=\$(nova image-list|grep -E ' $img '|awk '{print \$2}')
 NET=\$($QUANTUM net-list|grep ' $net '|awk '{print \$2}')
 if [ -z "$ipaddr" ]; then
   ID=\$(nova boot --flavor 1 --image \$IMG --nic net-id=\$NET --key-name $keyname --availability-zone $zone $name|grep ' id '|awk '{print \$4}')
@@ -666,7 +668,7 @@ test \$fail -ne 0 && exit 1
 fail=1
 for (( i=0; i<36; i++ )); do
   CONSOLE_LOG="\$(nova console-log \$ID|sed -u 's/^/[$name]/')"
-  echo "\${CONSOLE_LOG}"|egrep 'cirros login:'
+  echo "\${CONSOLE_LOG}"|egrep '.* login: $'
   if [ \$? -eq 0 ]; then
     fail=0
     break
@@ -978,15 +980,15 @@ result "" $? "++"
 
 TITLE="launch instance: vm1"
 title
-test_instance "cirros-0.3.1-x86_64-uec" "vm1" $PRIVATE_NET "key1" "admin" "demo" "nova:ryudev1"
+test_instance $IMAGE_NAME "vm1" $PRIVATE_NET "key1" "admin" "demo" "nova:ryudev1"
 result "" $?
 TITLE="launch instance: vm2"
 title
-test_instance "cirros-0.3.1-x86_64-uec" "vm2" $PRIVATE_NET "key1" "admin" "demo" "nova:ryudev2"
+test_instance $IMAGE_NAME "vm2" $PRIVATE_NET "key1" "admin" "demo" "nova:ryudev2"
 result "" $?
 TITLE="launch instance: vm3"
 title
-test_instance "cirros-0.3.1-x86_64-uec" "vm3" $PRIVATE_NET "key1" "admin" "demo" "nova:ryudev3"
+test_instance $IMAGE_NAME "vm3" $PRIVATE_NET "key1" "admin" "demo" "nova:ryudev3"
 result "" $?
     
 TITLE="floatingip: vm1"
@@ -1044,7 +1046,7 @@ test_create_tenant "test" "test" "10.0.1.1" "10.0.1.0/24"
 result "tenant" $?
 prepare_test "key2" "admin" "test"
 result "keypair" $?
-test_instance "cirros-0.3.1-x86_64-uec" "vm4" "test" "key2" "admin" "test" "nova:ryudev2"
+test_instance $IMAGE_NAME "vm4" "test" "key2" "admin" "test" "nova:ryudev2"
 result "instance" $?
 ip=$(cat $TMP/fixedip-vm4)
 test_float "vm4" "test" $ip "key2" "admin" "test" "cirros"
@@ -1064,7 +1066,7 @@ result "tenant" $?
 prepare_test "key3" "admin" "demo2"
 result "keypair" $?
 ip1=$(cat $TMP/fixedip-vm1)
-test_instance "cirros-0.3.1-x86_64-uec" "vm5" "demo2" "key3" "admin" "demo2" "nova:ryudev3" $ip1
+test_instance $IMAGE_NAME "vm5" "demo2" "key3" "admin" "demo2" "nova:ryudev3" $ip1
 result "instance" $?
 ip=$(cat $TMP/fixedip-vm5)
 test_float "vm5" "demo2" $ip "key3" "admin" "demo2" "cirros"
