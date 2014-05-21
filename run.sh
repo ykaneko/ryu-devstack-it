@@ -662,7 +662,7 @@ for (( i=0; i<30; i++ )); do
   elif [ "\$ST" = "ERROR" ]; then
     break
   fi
-  sleep 10
+  sleep 20
 done
 test \$fail -ne 0 && exit 1
 fail=1
