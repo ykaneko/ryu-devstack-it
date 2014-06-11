@@ -275,8 +275,8 @@ which pip
 if [ \$? -ne 0 ]; then
   $APTGETINSTALL python-pip
 fi
+$SUDO pip install -U --force-reinstall 'pip==1.4.1'
 if dpkg -l python-pip >/dev/null 2>&1; then
-  $SUDO pip install -U pip
   $APTGETREMOVE python-pip
 fi
 python -c 'import pbr' || $SUDO pip install -U --force-reinstall pbr
