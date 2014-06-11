@@ -46,5 +46,5 @@ RECLONE=yes
 # Uncomment the following line to save time by skipping checking of packages that need to be installed
 #OFFLINE=True
 
-NEUTRON_REPO=https://github.com/osrg/quantum
-NEUTRON_BRANCH=ofagent
+#NEUTRON_REPO=https://github.com/osrg/quantum
+#NEUTRON_BRANCH=ofagent
