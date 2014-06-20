@@ -458,6 +458,8 @@ function stop_devstack() {
     mkdir -p $STACKLOG/$vmname
     $SCPCMD -r ubuntu@$ipaddr:logs/* $STACKLOG/$vmname
     find $STACKLOG/$vmname -name '*.log'|xargs -r -n 1 gzip
+    find $STACKLOG/$vmname -name devstack|xargs -r -n 1 rm
+    find $STACKLOG/$vmname -name devstack.summary|xargs -r -n 1 rm
 
     TITLE="cleanup bridge and netns: $vmname/$ipaddr"
     title "++"
