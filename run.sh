@@ -291,6 +291,7 @@ python -c 'import oslo.config' || $SUDO pip install -U --force-reinstall oslo.co
 python -c 'import oslo.rootwrap.cmd' || $SUDO pip install -U --force-reinstall oslo.rootwrap
 python -c 'import oslo.messaging' || $SUDO pip install -U --force-reinstall oslo.messaging
 python -c 'import oslo.vmware' || $SUDO pip install -U --force-reinstall oslo.vmware
+python -c 'import oslo.db' || $SUDO pip install -U --force-reinstall oslo.db
 python -c 'import tinyrpc' || $SUDO pip install -U --force-reinstall tinyrpc
 EOF
 
